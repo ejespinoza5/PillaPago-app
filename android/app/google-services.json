@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "285182131392",
+    "project_id": "pillapago",
+    "storage_bucket": "pillapago.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:285182131392:android:412a7c60bed78ce75e4125",
+        "android_client_info": {
+          "package_name": "com.example.pillapago"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjhgbeV727o6MuxcaUgrZog5gUbmcbtNA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
