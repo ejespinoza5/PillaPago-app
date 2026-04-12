@@ -40,7 +40,11 @@ dependencies:
   connectivity_plus: ^5.0.0 # Para detectar el estado de conexión a internet
   path: ^1.9.0              # Para manejar rutas de archivos
   intl: ^0.18.1             # Para formatear fechas (opcional pero recomendado)
-
+  qr_flutter: ^4.1.0           # Generar códigos QR
+  mobile_scanner: ^4.0.1       # Escáner QR
+  share_plus: ^7.2.1           # Compartir código (opcional pero recomendado)
+  fl_chart: ^0.68.0
+  permission_handler: ^11.0.0
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

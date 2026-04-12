@@ -9,10 +9,14 @@ import '../services/database_service.dart';
 import '../services/connectivity_service.dart';
 import '../offline/offline_manager.dart';
 import '../offline/sync_manager.dart';
+import '../theme/app_theme.dart';
 import 'settings_screen.dart';
 import 'add_transferencia_screen.dart';
 import 'pending_transfers_screen.dart';
 import 'edit_transferencia_screen.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String token;
@@ -34,7 +38,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _filtroActual = 'hoy';
   DateTime _fechaSeleccionada = DateTime.now();
 
-  // Variables offline
   late DatabaseService _dbService;
   late ConnectivityService _connectivityService;
   late OfflineManager _offlineManager;
@@ -45,7 +48,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final ValueNotifier<int> _pendingCountNotifier = ValueNotifier<int>(0);
   Timer? _pendingTimer;
   
-  // Variables para paginación
   int _currentPage = 1;
   int _totalPages = 1;
   bool _hasMorePages = true;
@@ -53,6 +55,9 @@ class _HomeScreenState extends State<HomeScreen> {
   
   late ScrollController _scrollController;
   bool _showScrollToTopButton = false;
+
+  List<Map<String, dynamic>> _estadisticas = [];
+  bool _isLoadingEstadisticas = false;
 
   @override
   void initState() {
@@ -93,6 +98,94 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  Future<void> _loadEstadisticas() async {
+    setState(() {
+      _isLoadingEstadisticas = true;
+    });
+    
+    try {
+      final token = await _getValidToken();
+      if (token.isEmpty) {
+        setState(() {
+          _isLoadingEstadisticas = false;
+        });
+        return;
+      }
+      
+      final response = await _apiService.getEstadisticasUltimos7Dias(token);
+      
+      if (mounted && response['success']) {
+        setState(() {
+          _estadisticas = List<Map<String, dynamic>>.from(response['data']['data']);
+          _isLoadingEstadisticas = false;
+        });
+        await _guardarEstadisticasEnCache();
+      } else {
+        await _cargarEstadisticasDesdeCache();
+        setState(() {
+          _isLoadingEstadisticas = false;
+        });
+      }
+    } catch (e) {
+      await _cargarEstadisticasDesdeCache();
+      setState(() {
+        _isLoadingEstadisticas = false;
+      });
+    }
+  }
+
+  Future<void> _guardarEstadisticasEnCache() async {
+    try {
+      final db = await _dbService.database;
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS estadisticas_cache (
+          id INTEGER PRIMARY KEY,
+          data TEXT,
+          fecha_actualizacion TEXT
+        )
+      ''');
+      
+      final dataStr = _estadisticas.map((e) => '${e['fecha']}|${e['total_transferencias']}').join(',');
+      await db.insert(
+        'estadisticas_cache',
+        {
+          'id': 1,
+          'data': dataStr,
+          'fecha_actualizacion': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      print('Error guardando estadísticas: $e');
+    }
+  }
+
+  Future<void> _cargarEstadisticasDesdeCache() async {
+    try {
+      final db = await _dbService.database;
+      final result = await db.query('estadisticas_cache', where: 'id = ?', whereArgs: [1]);
+      if (result.isNotEmpty) {
+        final dataStr = result.first['data'] as String;
+        final items = dataStr.split(',');
+        final List<Map<String, dynamic>> estadisticasCache = [];
+        for (var item in items) {
+          final parts = item.split('|');
+          if (parts.length == 2) {
+            estadisticasCache.add({
+              'fecha': parts[0],
+              'total_transferencias': int.tryParse(parts[1]) ?? 0,
+            });
+          }
+        }
+        setState(() {
+          _estadisticas = estadisticasCache;
+        });
+      }
+    } catch (e) {
+      print('Error cargando estadísticas desde caché: $e');
+    }
+  }
+
   Future<void> _updatePendingCount() async {
     final pendientes = await _dbService.getTransferenciasPendientes();
     _pendingCountNotifier.value = pendientes.length;
@@ -111,7 +204,10 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: isError ? Colors.red : Colors.green,
+        backgroundColor: isError ? AppTheme.error : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -164,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _loadUserData(),
           _loadTotalData(),
           _loadTransferencias(reset: true),
+          _loadEstadisticas(),
         ]);
         
         await _offlineManager.saveDataToCache(
@@ -177,6 +274,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } else {
       await _loadDataFromCache();
+      await _cargarEstadisticasDesdeCache();
       
       if (_transferencias.isEmpty && _userData.isEmpty) {
         setState(() {
@@ -381,33 +479,60 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
-    final GoogleSignIn googleSignIn = GoogleSignIn();
-    await googleSignIn.signOut();
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, "/login");
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Cerrar Sesión'),
+          content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+              child: const Text('Cerrar Sesión'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      await ApiService.clearTokens();
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      await googleSignIn.signOut();
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => LoginScreen()),
+          (route) => false,
+        );
+      }
     }
   }
 
   void _showFilterDialog() {
     showModalBottomSheet(
       context: context,
-      shape: RoundedRectangleBorder(
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (BuildContext context) {
         return Container(
-          padding: EdgeInsets.all(20),
+          padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Filtrar por', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              SizedBox(height: 20),
-              ListTile(
-                leading: Icon(Icons.today),
-                title: Text('Hoy'),
-                trailing: _filtroActual == 'hoy' ? Icon(Icons.check, color: Colors.blue) : null,
+              const Text('Filtrar por', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+              _buildFilterOption(
+                icon: Icons.today,
+                title: 'Hoy',
+                isSelected: _filtroActual == 'hoy',
                 onTap: () {
                   setState(() {
                     _filtroActual = 'hoy';
@@ -416,10 +541,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.pop(context);
                 },
               ),
-              ListTile(
-                leading: Icon(Icons.calendar_today),
-                title: Text('Día específico'),
-                trailing: _filtroActual == 'dia' ? Icon(Icons.check, color: Colors.blue) : null,
+              _buildFilterOption(
+                icon: Icons.calendar_today,
+                title: 'Día específico',
+                isSelected: _filtroActual == 'dia',
                 onTap: () async {
                   final date = await showDatePicker(
                     context: context,
@@ -437,10 +562,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.pop(context);
                 },
               ),
-              ListTile(
-                leading: Icon(Icons.calendar_month),
-                title: Text('Mes'),
-                trailing: _filtroActual == 'mes' ? Icon(Icons.check, color: Colors.blue) : null,
+              _buildFilterOption(
+                icon: Icons.calendar_month,
+                title: 'Mes',
+                isSelected: _filtroActual == 'mes',
                 onTap: () async {
                   final date = await showDatePicker(
                     context: context,
@@ -458,17 +583,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.pop(context);
                 },
               ),
-              ListTile(
-                leading: Icon(Icons.date_range),
-                title: Text('Año'),
-                trailing: _filtroActual == 'anio' ? Icon(Icons.check, color: Colors.blue) : null,
+              _buildFilterOption(
+                icon: Icons.date_range,
+                title: 'Año',
+                isSelected: _filtroActual == 'anio',
                 onTap: () async {
                   final year = await showDialog<int>(
                     context: context,
                     builder: (context) {
                       int selectedYear = DateTime.now().year;
                       return AlertDialog(
-                        title: Text('Seleccionar año'),
+                        title: const Text('Seleccionar año'),
                         content: DropdownButton<int>(
                           value: selectedYear,
                           isExpanded: true,
@@ -489,7 +614,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context),
-                            child: Text('Cancelar'),
+                            child: const Text('Cancelar'),
                           ),
                         ],
                       );
@@ -509,6 +634,20 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildFilterOption({
+    required IconData icon,
+    required String title,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: isSelected ? AppTheme.green : AppTheme.textSecondary),
+      title: Text(title, style: TextStyle(color: isSelected ? AppTheme.green : AppTheme.textPrimary)),
+      trailing: isSelected ? Icon(Icons.check, color: AppTheme.green) : null,
+      onTap: onTap,
     );
   }
 
@@ -539,248 +678,396 @@ class _HomeScreenState extends State<HomeScreen> {
       return 'Fecha no disponible';
     }
   }
+
   Future<String> _getValidToken() async {
-  if (widget.token.isNotEmpty) {
-    return widget.token;
+    if (widget.token.isNotEmpty) {
+      return widget.token;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('token') ?? '';
   }
-  // Si el token del widget está vacío, obtenerlo de SharedPreferences
-  final prefs = await SharedPreferences.getInstance();
-  final savedToken = prefs.getString('token') ?? '';
-  print('Token recuperado de SharedPreferences: ${savedToken.length}');
-  return savedToken;
-}
 
- void _showTransferenciaDetalle(Map<String, dynamic> transferencia) async {
-  // Mostrar loading
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (BuildContext context) {
-      return Center(child: CircularProgressIndicator());
-    },
-  );
-  
-  try {
-    final token = await _getValidToken();
-    if (token.isEmpty) {
-      Navigator.pop(context);
-      _showSnack('Error: Sesión expirada', isError: true);
-      return;
+  Widget _buildEstadisticasChart() {
+    if (_estadisticas.isEmpty) {
+      return const SizedBox.shrink();
     }
     
-    // ✅ Obtener datos actualizados incluyendo disponible_para_editar
-    final response = await _apiService.getTransferenciaById(
-      token,
-      transferencia['id_transferencia'],
-    );
+    final dias = _estadisticas.map((e) {
+      final fecha = DateTime.parse(e['fecha']);
+      return '${fecha.day}/${fecha.month}';
+    }).toList();
     
-    // Cerrar loading
-    Navigator.pop(context);
+    final valores = _estadisticas.map((e) => (e['total_transferencias'] ?? 0).toDouble()).toList();
+    final maxY = valores.isEmpty ? 5 : valores.reduce((a, b) => a > b ? a : b);
     
-    if (response['success']) {
-      final transferenciaActualizada = response['data'];
-      final esDueno = _userData['es_dueno'] ?? false;
-      final puedeEditar = transferenciaActualizada['disponible_para_editar'] ?? false;
-      final puedeEliminar = esDueno;
-      
-      print('=== TRANSFERENCIA ACTUALIZADA ===');
-      print('esDueno: $esDueno');
-      print('disponible_para_editar: $puedeEditar');
-      
-      _mostrarDialogoDetalle(transferenciaActualizada, esDueno, puedeEditar, puedeEliminar);
-    } else {
-      _showSnack(response['message'] ?? 'Error al cargar detalles', isError: true);
-    }
-  } catch (e) {
-    Navigator.pop(context);
-    print('Error en _showTransferenciaDetalle: $e');
-    _showSnack('Error de conexión: ${e.toString()}', isError: true);
-  }
-}
-
-void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bool puedeEditar, bool puedeEliminar) {
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: Text('Detalle de Transferencia'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDetalleRow('Banco:', transferencia['banco'] ?? 'No especificado'),
-              SizedBox(height: 8),
-              _buildDetalleRow('Monto:', _formatMonto(transferencia['monto'])),
-              SizedBox(height: 8),
-              _buildDetalleRow('Fecha:', _formatFecha(transferencia['fecha_transferencia'])),
-              SizedBox(height: 8),
-              _buildDetalleRow('Registrado por:', transferencia['usuario_nombre'] ?? 'Usuario desconocido'),
-              SizedBox(height: 8),
-              _buildDetalleRow('Estado:', transferencia['estado'] ?? 'No especificado'),
-              if (transferencia['observaciones'] != null && 
-                  transferencia['observaciones'].toString().isNotEmpty) ...[
-                SizedBox(height: 8),
-                _buildDetalleRow('Observaciones:', transferencia['observaciones']),
+    return Card(
+      elevation: 4,
+      color: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      margin: const EdgeInsets.only(top: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.show_chart, color: AppTheme.green, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'Transferencias - Últimos 7 días',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ],
-              if (transferencia['url_comprobante'] != null && 
-                  transferencia['url_comprobante'].toString().isNotEmpty) ...[
-                SizedBox(height: 12),
-                Text('Comprobante:', style: TextStyle(fontWeight: FontWeight.bold)),
-                SizedBox(height: 8),
-                InkWell(
-                  onTap: () => _showComprobanteImagen(transferencia['url_comprobante']),
-                  child: Container(
-                    height: 150,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      image: DecorationImage(
-                        image: CachedNetworkImageProvider(transferencia['url_comprobante']),
-                        fit: BoxFit.cover,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 200,
+              child: LineChart(
+                LineChartData(
+                  gridData: FlGridData(
+                    show: true,
+                    getDrawingHorizontalLine: (value) {
+                      return FlLine(
+                        color: AppTheme.border,
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index >= 0 && index < dias.length) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                dias[index],
+                                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                              ),
+                            );
+                          }
+                          return const Text('');
+                        },
+                        reservedSize: 30,
                       ),
                     ),
-                  ),
-                ),
-              ],
-              // ✅ Mensaje si no está disponible para editar
-              if (!esDueno && !puedeEditar)
-                Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(8),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            value.toInt().toString(),
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                          );
+                        },
+                        reservedSize: 35,
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.timer_off, size: 16, color: Colors.red),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Ya no puedes editar esta transferencia. El tiempo para editarla ha expirado.',
-                            style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                          ),
-                        ),
-                      ],
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
                     ),
                   ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  minX: 0,
+                  maxX: valores.length.toDouble() - 1,
+                  minY: 0,
+                  maxY: maxY + 1,
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: List.generate(valores.length, (index) {
+                        return FlSpot(index.toDouble(), valores[index]);
+                      }),
+                      isCurved: true,
+                      color: AppTheme.green,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (spot, percent, barData, index) {
+                          return FlDotCirclePainter(
+                            radius: 4,
+                            color: AppTheme.green,
+                            strokeWidth: 2,
+                            strokeColor: Colors.white,
+                          );
+                        },
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: AppTheme.green.withOpacity(0.2),
+                      ),
+                    ),
+                  ],
+                  lineTouchData: LineTouchData(
+                    enabled: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          return LineTooltipItem(
+                            '${spot.y.toInt()} transferencias',
+                            const TextStyle(color: Colors.white),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
                 ),
-            ],
-          ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Total del período:', style: TextStyle(color: AppTheme.textSecondary)),
+                  Text(
+                    '${valores.reduce((a, b) => a + b).toInt()} transferencias',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.green),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        actions: [
-          // ✅ Botón Editar (solo empleados y si disponible_para_editar es true)
-         if (esDueno || (!esDueno && puedeEditar))
-            TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(context);
-                final token = await _getValidToken();
-                if (token.isEmpty) return;
-                
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditTransferenciaScreen(
-                      token: token,
-                      transferencia: transferencia,
-                      puedeEditar: true,
-                    ),
-                  ),
-                );
-                if (result == true) {
-                  _loadAllData();
-                }
-              },
-              icon: Icon(Icons.edit, color: Colors.blue),
-              label: Text('Editar', style: TextStyle(color: Colors.blue)),
-            ),
-          // ✅ Botón Eliminar (solo dueños)
-          if (puedeEliminar)
-            TextButton.icon(
-              onPressed: () async {
-                final token = await _getValidToken();
-                if (token.isEmpty) return;
-                _confirmarEliminar(transferencia, token);
-              },
-              icon: Icon(Icons.delete, color: Colors.red),
-              label: Text('Eliminar', style: TextStyle(color: Colors.red)),
-            ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
-          ),
-        ],
-      );
-    },
-  );
-}
+      ),
+    );
+  }
 
-  Future<void> _confirmarEliminar(Map<String, dynamic> transferencia, String token) async {
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: Text('Eliminar Transferencia'),
-        content: Text('¿Estás seguro de que deseas eliminar esta transferencia? Esta acción no se puede deshacer.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: Text('Eliminar'),
-          ),
-        ],
-      );
-    },
-  );
-
-  if (confirm == true) {
-    setState(() {
-      _isLoading = true;
-    });
+  void _showTransferenciaDetalle(Map<String, dynamic> transferencia) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Center(child: CircularProgressIndicator());
+      },
+    );
     
     try {
-      print('=== ELIMINANDO TRANSFERENCIA ===');
-      print('ID: ${transferencia['id_transferencia']}');
-      print('Token length: ${token.length}');
+      final token = await _getValidToken();
+      if (token.isEmpty) {
+        Navigator.pop(context);
+        _showSnack('Error: Sesión expirada', isError: true);
+        return;
+      }
       
-      final response = await _apiService.eliminarTransferencia(
+      final response = await _apiService.getTransferenciaById(
         token,
         transferencia['id_transferencia'],
       );
       
-      print('Respuesta eliminar: $response');
+      Navigator.pop(context);
       
       if (response['success']) {
-        _showSnack(response['message']);
-        _loadAllData();
+        final transferenciaActualizada = response['data'];
+        final esDueno = _userData['es_dueno'] ?? false;
+        final puedeEditar = transferenciaActualizada['disponible_para_editar'] ?? false;
+        final puedeEliminar = esDueno;
+        
+        _mostrarDialogoDetalle(transferenciaActualizada, esDueno, puedeEditar, puedeEliminar);
       } else {
-        _showSnack(response['message'] ?? 'Error al eliminar', isError: true);
+        _showSnack(response['message'] ?? 'Error al cargar detalles', isError: true);
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      _showSnack('Error de conexión: ${e.toString()}', isError: true);
+    }
+  }
+
+  void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bool puedeEditar, bool puedeEliminar) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Detalle de Transferencia', style: TextStyle(color: AppTheme.textPrimary)),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDetalleRow('Banco:', transferencia['banco'] ?? 'No especificado'),
+                const SizedBox(height: 8),
+                _buildDetalleRow('Monto:', _formatMonto(transferencia['monto'])),
+                const SizedBox(height: 8),
+                _buildDetalleRow('Fecha:', _formatFecha(transferencia['fecha_transferencia'])),
+                const SizedBox(height: 8),
+                _buildDetalleRow('Registrado por:', transferencia['usuario_nombre'] ?? 'Usuario desconocido'),
+                const SizedBox(height: 8),
+                _buildDetalleRow('Estado:', transferencia['estado'] ?? 'No especificado'),
+                if (transferencia['observaciones'] != null && 
+                    transferencia['observaciones'].toString().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _buildDetalleRow('Observaciones:', transferencia['observaciones']),
+                ],
+                if (transferencia['url_comprobante'] != null && 
+                    transferencia['url_comprobante'].toString().isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text('Comprobante:', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () => _showComprobanteImagen(transferencia['url_comprobante']),
+                    child: Container(
+                      height: 150,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        image: DecorationImage(
+                          image: CachedNetworkImageProvider(transferencia['url_comprobante']),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                if (!esDueno && !puedeEditar)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorBg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.timer_off, size: 16, color: AppTheme.error),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Ya no puedes editar esta transferencia. El tiempo para editarla ha expirado.',
+                              style: TextStyle(fontSize: 12, color: AppTheme.error),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            if (esDueno || (!esDueno && puedeEditar))
+              TextButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  final token = await _getValidToken();
+                  if (token.isEmpty) return;
+                  
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EditTransferenciaScreen(
+                        token: token,
+                        transferencia: transferencia,
+                        puedeEditar: true,
+                      ),
+                    ),
+                  );
+                  if (result == true) {
+                    _loadAllData();
+                  }
+                },
+                icon: const Icon(Icons.edit, color: AppTheme.green),
+                label: const Text('Editar', style: TextStyle(color: AppTheme.green)),
+              ),
+            if (puedeEliminar)
+              TextButton.icon(
+                onPressed: () async {
+                  final token = await _getValidToken();
+                  if (token.isEmpty) return;
+                  _confirmarEliminar(transferencia, token);
+                },
+                icon: const Icon(Icons.delete, color: AppTheme.error),
+                label: const Text('Eliminar', style: TextStyle(color: AppTheme.error)),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmarEliminar(Map<String, dynamic> transferencia, String token) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface,
+          title: const Text('Eliminar Transferencia', style: TextStyle(color: AppTheme.textPrimary)),
+          content: const Text('¿Estás seguro de que deseas eliminar esta transferencia? Esta acción no se puede deshacer.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      try {
+        final response = await _apiService.eliminarTransferencia(
+          token,
+          transferencia['id_transferencia'],
+        );
+        
+        if (response['success']) {
+          _showSnack(response['message']);
+          _loadAllData();
+        } else {
+          _showSnack(response['message'] ?? 'Error al eliminar', isError: true);
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      } catch (e) {
+        _showSnack('Error de conexión: ${e.toString()}', isError: true);
         setState(() {
           _isLoading = false;
         });
       }
-    } catch (e) {
-      print('Error en eliminar: $e');
-      _showSnack('Error de conexión: ${e.toString()}', isError: true);
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
-}
 
   Widget _buildDetalleRow(String label, String value) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700])),
-        SizedBox(width: 8),
-        Expanded(child: Text(value)),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(value, style: const TextStyle(color: AppTheme.textPrimary))),
       ],
     );
   }
@@ -790,32 +1077,33 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
       context: context,
       builder: (BuildContext context) {
         return Dialog(
+          backgroundColor: AppTheme.surface,
           child: Container(
             width: double.maxFinite,
             height: 500,
             child: Column(
               children: [
                 AppBar(
-                  title: Text('Comprobante'),
-                  backgroundColor: Colors.blue,
+                  title: const Text('Comprobante'),
+                  backgroundColor: AppTheme.green,
                   foregroundColor: Colors.white,
                   automaticallyImplyLeading: false,
                   actions: [
-                    IconButton(icon: Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                   ],
                 ),
                 Expanded(
                   child: CachedNetworkImage(
                     imageUrl: url,
                     fit: BoxFit.contain,
-                    placeholder: (context, url) => Center(child: CircularProgressIndicator()),
+                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
                     errorWidget: (context, url, error) => Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.error_outline, size: 48, color: Colors.red),
-                          SizedBox(height: 16),
-                          Text('No se pudo cargar la imagen'),
+                          const Icon(Icons.error_outline, size: 48, color: AppTheme.error),
+                          const SizedBox(height: 16),
+                          const Text('No se pudo cargar la imagen', style: TextStyle(color: AppTheme.textSecondary)),
                         ],
                       ),
                     ),
@@ -839,19 +1127,25 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
           width: size,
           height: size,
           fit: BoxFit.cover,
-          placeholder: (context, url) => Container(width: size, height: size, child: CircularProgressIndicator()),
+          placeholder: (context, url) => Container(width: size, height: size, child: const CircularProgressIndicator()),
           errorWidget: (context, url, error) => CircleAvatar(
             radius: size / 2,
-            backgroundColor: Colors.blue.shade100,
-            child: Text(nombre?.substring(0, 1).toUpperCase() ?? 'U', style: TextStyle(fontSize: size / 2, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
+            backgroundColor: AppTheme.surfaceLight,
+            child: Text(
+              nombre?.substring(0, 1).toUpperCase() ?? 'U',
+              style: TextStyle(fontSize: size / 2, fontWeight: FontWeight.bold, color: AppTheme.green),
+            ),
           ),
         ),
       );
     } else {
       return CircleAvatar(
         radius: size / 2,
-        backgroundColor: Colors.blue.shade100,
-        child: Text(nombre?.substring(0, 1).toUpperCase() ?? 'U', style: TextStyle(fontSize: size / 2, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
+        backgroundColor: AppTheme.surfaceLight,
+        child: Text(
+          nombre?.substring(0, 1).toUpperCase() ?? 'U',
+          style: TextStyle(fontSize: size / 2, fontWeight: FontWeight.bold, color: AppTheme.green),
+        ),
       );
     }
   }
@@ -862,23 +1156,24 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
     final bool tieneFoto = _userData['tiene_foto_perfil'] ?? false;
 
     return Scaffold(
+      backgroundColor: AppTheme.bgDark,
       appBar: AppBar(
         title: Row(
           children: [
-            Text("PillaPago"),
-            SizedBox(width: 8),
+            const Text("PillaPago", style: TextStyle(color: AppTheme.textPrimary)),
+            const SizedBox(width: 8),
             Container(
               width: 10,
               height: 10,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _isOnline ? Colors.green : Colors.red,
+                color: _isOnline ? AppTheme.green : AppTheme.error,
               ),
             ),
           ],
         ),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         automaticallyImplyLeading: false,
         actions: [
           ValueListenableBuilder<int>(
@@ -887,7 +1182,7 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
               return Stack(
                 children: [
                   IconButton(
-                    icon: Icon(Icons.pending_actions),
+                    icon: const Icon(Icons.pending_actions, color: AppTheme.textPrimary),
                     onPressed: () async {
                       await Navigator.push(
                         context,
@@ -904,15 +1199,15 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
                       right: 8,
                       top: 8,
                       child: Container(
-                        padding: EdgeInsets.all(2),
+                        padding: const EdgeInsets.all(2),
                         decoration: BoxDecoration(
-                          color: Colors.red,
+                          color: AppTheme.error,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        constraints: BoxConstraints(minWidth: 16, minHeight: 16),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                         child: Text(
                           '$pendingCount',
-                          style: TextStyle(color: Colors.white, fontSize: 10),
+                          style: const TextStyle(color: Colors.white, fontSize: 10),
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -922,7 +1217,7 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
             },
           ),
           IconButton(
-            icon: Icon(Icons.settings),
+            icon: const Icon(Icons.settings, color: AppTheme.textPrimary),
             onPressed: () {
               Navigator.push(
                 context,
@@ -938,81 +1233,105 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
         children: [
           RefreshIndicator(
             onRefresh: _loadAllData,
+            color: AppTheme.green,
             child: _isLoading
-                ? Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator())
                 : _errorMessage.isNotEmpty && _transferencias.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.error_outline, size: 64, color: Colors.red),
-                            SizedBox(height: 16),
-                            Text(_errorMessage),
-                            SizedBox(height: 16),
-                            ElevatedButton(onPressed: _loadAllData, child: Text('Reintentar')),
+                            const Icon(Icons.error_outline, size: 64, color: AppTheme.error),
+                            const SizedBox(height: 16),
+                            Text(_errorMessage, style: const TextStyle(color: AppTheme.error)),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _loadAllData,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.green,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Reintentar'),
+                            ),
                           ],
                         ),
                       )
                     : SingleChildScrollView(
                         controller: _scrollController,
-                        physics: AlwaysScrollableScrollPhysics(),
-                        padding: EdgeInsets.all(16),
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
                                 _buildProfileImage(fotoPerfilUrl, tieneFoto, _userData['nombre']),
-                                SizedBox(width: 12),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Hola, ${_userData['nombre']?.split(' ')[0] ?? 'Usuario'}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                                      Text(_userData['nombre_negocio'] ?? 'Sin negocio', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                                      Text(
+                                        'Hola, ${_userData['nombre']?.split(' ')[0] ?? 'Usuario'}',
+                                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                      ),
+                                      Text(
+                                        _userData['nombre_negocio'] ?? 'Sin negocio',
+                                        style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+                                      ),
                                     ],
                                   ),
                                 ),
                               ],
                             ),
-                            SizedBox(height: 24),
+                            const SizedBox(height: 24),
                             Card(
+                              color: AppTheme.surface,
                               elevation: 4,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               child: InkWell(
                                 onTap: _showFilterDialog,
                                 borderRadius: BorderRadius.circular(16),
                                 child: Padding(
-                                  padding: EdgeInsets.all(24),
+                                  padding: const EdgeInsets.all(24),
                                   child: Column(
                                     children: [
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text('Total', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                                          const Text('Total', style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
                                           Container(
-                                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                            decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(20)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.green.withOpacity(0.1),
+                                              borderRadius: BorderRadius.circular(20),
+                                            ),
                                             child: Row(
                                               children: [
-                                                Text(_getPeriodoTexto(), style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w500)),
-                                                SizedBox(width: 4),
-                                                Icon(Icons.arrow_drop_down, color: Colors.blue),
+                                                Text(_getPeriodoTexto(), style: const TextStyle(color: AppTheme.green, fontWeight: FontWeight.w500)),
+                                                const SizedBox(width: 4),
+                                                const Icon(Icons.arrow_drop_down, color: AppTheme.green),
                                               ],
                                             ),
                                           ),
                                         ],
                                       ),
-                                      SizedBox(height: 16),
-                                      Text(_formatMonto(_totalData['total'] ?? 0), style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
-                                      SizedBox(height: 8),
-                                      Text(_totalData['moneda'] ?? 'USD', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        _formatMonto(_totalData['total'] ?? 0),
+                                        style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: AppTheme.green),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        _totalData['moneda'] ?? 'USD',
+                                        style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+                                      ),
                                     ],
                                   ),
                                 ),
                               ),
                             ),
-                            SizedBox(height: 24),
+                            const SizedBox(height: 24),
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton.icon(
@@ -1026,57 +1345,68 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
                                     _loadAllData();
                                   }
                                 },
-                                icon: Icon(Icons.add_circle_outline),
-                                label: Text('Añadir Transferencia', style: TextStyle(fontSize: 16)),
+                                icon: const Icon(Icons.add_circle_outline),
+                                label: const Text('Añadir Transferencia', style: TextStyle(fontSize: 16)),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
+                                  backgroundColor: AppTheme.green,
                                   foregroundColor: Colors.white,
-                                  padding: EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                               ),
                             ),
-                            SizedBox(height: 24),
+                            if (!_isLoadingEstadisticas && _estadisticas.isNotEmpty)
+                              _buildEstadisticasChart(),
+                            if (_isLoadingEstadisticas)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 20),
+                                child: Center(child: CircularProgressIndicator()),
+                              ),
+                            const SizedBox(height: 24),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('Historial', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                                const Text('Historial', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                                 if (_transferencias.isNotEmpty)
-                                  Text('${_transferencias.length} registros', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                                  Text(
+                                    '${_transferencias.length} registros',
+                                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                                  ),
                               ],
                             ),
-                            SizedBox(height: 12),
+                            const SizedBox(height: 12),
                             _transferencias.isEmpty
                                 ? Center(
                                     child: Padding(
-                                      padding: EdgeInsets.all(40),
+                                      padding: const EdgeInsets.all(40),
                                       child: Column(
                                         children: [
-                                          Icon(Icons.history, size: 64, color: Colors.grey[400]),
-                                          SizedBox(height: 16),
-                                          Text('No hay transferencias registradas', style: TextStyle(color: Colors.grey[600])),
+                                          const Icon(Icons.history, size: 64, color: AppTheme.textSecondary),
+                                          const SizedBox(height: 16),
+                                          const Text('No hay transferencias registradas', style: TextStyle(color: AppTheme.textSecondary)),
                                         ],
                                       ),
                                     ),
                                   )
                                 : ListView.builder(
                                     shrinkWrap: true,
-                                    physics: NeverScrollableScrollPhysics(),
+                                    physics: const NeverScrollableScrollPhysics(),
                                     itemCount: _transferencias.length + (_isLoadingMore ? 1 : 0),
                                     itemBuilder: (context, index) {
                                       if (index == _transferencias.length && _isLoadingMore) {
-                                        return Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
+                                        return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
                                       }
                                       final transferencia = _transferencias[index];
                                       return Card(
-                                        margin: EdgeInsets.only(bottom: 8),
+                                        margin: const EdgeInsets.only(bottom: 8),
+                                        color: AppTheme.surface,
                                         elevation: 2,
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                         child: InkWell(
                                           onTap: () => _showTransferenciaDetalle(transferencia),
                                           borderRadius: BorderRadius.circular(12),
                                           child: Padding(
-                                            padding: EdgeInsets.all(12),
+                                            padding: const EdgeInsets.all(12),
                                             child: Row(
                                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                               children: [
@@ -1084,24 +1414,27 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
                                                   child: Row(
                                                     children: [
                                                       CircleAvatar(
-                                                        backgroundColor: Colors.blue.shade100,
+                                                        backgroundColor: AppTheme.surfaceLight,
                                                         radius: 20,
-                                                        child: Icon(Icons.account_balance, color: Colors.blue, size: 20),
+                                                        child: Icon(Icons.account_balance, color: AppTheme.green, size: 20),
                                                       ),
-                                                      SizedBox(width: 12),
+                                                      const SizedBox(width: 12),
                                                       Expanded(
                                                         child: Column(
                                                           crossAxisAlignment: CrossAxisAlignment.start,
                                                           children: [
-                                                            Text(transferencia['banco'] ?? 'Banco no especificado', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                                            Text(
+                                                              transferencia['banco'] ?? 'Banco no especificado',
+                                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.textPrimary),
+                                                            ),
                                                             Row(
                                                               children: [
-                                                                Icon(Icons.person, size: 12, color: Colors.grey[600]),
-                                                                SizedBox(width: 4),
+                                                                const Icon(Icons.person, size: 12, color: AppTheme.textSecondary),
+                                                                const SizedBox(width: 4),
                                                                 Expanded(
                                                                   child: Text(
                                                                     transferencia['usuario_nombre'] ?? transferencia['nombre_usuario'] ?? 'Usuario desconocido',
-                                                                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                                                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                                                                     maxLines: 1,
                                                                     overflow: TextOverflow.ellipsis,
                                                                   ),
@@ -1109,7 +1442,12 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
                                                               ],
                                                             ),
                                                             if (transferencia['observaciones'] != null && transferencia['observaciones'].toString().isNotEmpty)
-                                                              Text(transferencia['observaciones'], style: TextStyle(fontSize: 12, color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                                              Text(
+                                                                transferencia['observaciones'],
+                                                                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                                                                maxLines: 1,
+                                                                overflow: TextOverflow.ellipsis,
+                                                              ),
                                                           ],
                                                         ),
                                                       ),
@@ -1119,8 +1457,14 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
                                                 Column(
                                                   crossAxisAlignment: CrossAxisAlignment.end,
                                                   children: [
-                                                    Text(_formatMonto(transferencia['monto']), style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 16)),
-                                                    Text(_formatFecha(transferencia['fecha_transferencia']), style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                                                    Text(
+                                                      _formatMonto(transferencia['monto']),
+                                                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.green, fontSize: 16),
+                                                    ),
+                                                    Text(
+                                                      _formatFecha(transferencia['fecha_transferencia']),
+                                                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                                    ),
                                                   ],
                                                 ),
                                               ],
@@ -1141,8 +1485,8 @@ void _mostrarDialogoDetalle(Map<String, dynamic> transferencia, bool esDueno, bo
               child: FloatingActionButton(
                 mini: true,
                 onPressed: _scrollToTop,
-                backgroundColor: Colors.blue,
-                child: Icon(Icons.arrow_upward, color: Colors.white),
+                backgroundColor: AppTheme.green,
+                child: const Icon(Icons.arrow_upward, color: Colors.white),
                 elevation: 4,
               ),
             ),

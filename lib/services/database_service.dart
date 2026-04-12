@@ -12,7 +12,7 @@ class DatabaseService {
 
   static Database? _database;
   static const String _databaseName = 'pillapago.db';
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 3;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -87,32 +87,54 @@ class DatabaseService {
         intentos INTEGER DEFAULT 0
       )
     ''');
-    // Tabla para bancos en caché
-await db.execute('''
-  CREATE TABLE bancos_cache (
-    id_banco INTEGER PRIMARY KEY,
-    nombre_banco TEXT
-  )
-''');
     
-    print('Base de datos local creada exitosamente');
-  }
-
-  // Agrega el método onUpgrade
-Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-  print('Actualizando base de datos de versión $oldVersion a $newVersion');
-  
-  if (oldVersion < 2) {
-    // Agregar tabla bancos_cache
+    // Tabla para bancos en caché
     await db.execute('''
       CREATE TABLE bancos_cache (
         id_banco INTEGER PRIMARY KEY,
         nombre_banco TEXT
       )
     ''');
-    print('Tabla bancos_cache agregada');
+    
+    // Tabla para estadísticas en caché
+    await db.execute('''
+      CREATE TABLE estadisticas_cache (
+        id INTEGER PRIMARY KEY,
+        data TEXT,
+        fecha_actualizacion TEXT
+      )
+    ''');
+    
+    print('Base de datos local creada exitosamente');
   }
-}
+
+  // ✅ Método onUpgrade corregido (solo uno)
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    print('Actualizando base de datos de versión $oldVersion a $newVersion');
+    
+    if (oldVersion < 2) {
+      // Agregar tabla bancos_cache
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS bancos_cache (
+          id_banco INTEGER PRIMARY KEY,
+          nombre_banco TEXT
+        )
+      ''');
+      print('✅ Tabla bancos_cache agregada');
+    }
+    
+    if (oldVersion < 3) {
+      // Agregar tabla estadisticas_cache
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS estadisticas_cache (
+          id INTEGER PRIMARY KEY,
+          data TEXT,
+          fecha_actualizacion TEXT
+        )
+      ''');
+      print('✅ Tabla estadisticas_cache agregada');
+    }
+  }
 
   // ==================== TRANSFERENCIAS CACHE ====================
   
@@ -204,18 +226,17 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     print('✅ Usuario guardado en caché');
   }
 
-  // Obtener usuario de caché
-Future<Map<String, dynamic>?> getUsuarioCache() async {
-  final db = await database;
-  final result = await db.query('usuario_cache', where: 'id = ?', whereArgs: [1]);
-  if (result.isNotEmpty) {
-    final data = result.first['data'];
-    if (data is String) {
-      return jsonDecode(data);
+  Future<Map<String, dynamic>?> getUsuarioCache() async {
+    final db = await database;
+    final result = await db.query('usuario_cache', where: 'id = ?', whereArgs: [1]);
+    if (result.isNotEmpty) {
+      final data = result.first['data'];
+      if (data is String) {
+        return jsonDecode(data);
+      }
     }
+    return null;
   }
-  return null;
-}
 
   // ==================== TRANSFERENCIAS PENDIENTES ====================
   

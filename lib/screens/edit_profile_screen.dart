@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../services/connectivity_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../theme/app_theme.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final String token;
@@ -45,15 +45,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _connectivityService = ConnectivityService();
     _cargarDatos();
   }
-Future<String> _getValidToken() async {
-  String token = widget.token;
-  if (token.isEmpty) {
-    final prefs = await SharedPreferences.getInstance();
-    token = prefs.getString('token') ?? '';
+
+  Future<String> _getValidToken() async {
+    String token = widget.token;
+    if (token.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      token = prefs.getString('token') ?? '';
+    }
+    return token;
   }
-  print('Token en edit_profile: ${token.length} caracteres');
-  return token;
-}
+
   void _cargarDatos() {
     _nombreController.text = widget.userData['nombre'] ?? '';
     _fotoActualUrl = widget.userData['foto_perfil_url'] ?? widget.userData['fotoPerfilUrl'];
@@ -88,123 +89,179 @@ Future<String> _getValidToken() async {
   }
 
   Future<void> _guardarCambios() async {
-  if (!_formKey.currentState!.validate()) return;
-  
-  if (!_isOnline) {
-    _showSnack('Sin conexión a internet. Conéctate para actualizar tu perfil.', isError: true);
-    return;
-  }
-  
-  setState(() {
-    _isLoading = true;
-    _errorMessage = '';
-  });
-  
-  try {
-    // ✅ Usar _getValidToken() en lugar de widget.token
-    final token = await _getValidToken();
-    if (token.isEmpty) {
-      setState(() {
-        _errorMessage = 'Sesión expirada. Por favor inicia sesión nuevamente.';
-        _isLoading = false;
-      });
+    if (!_formKey.currentState!.validate()) return;
+    
+    if (!_isOnline) {
+      _showSnack('Sin conexión a internet. Conéctate para actualizar tu perfil.', isError: true);
       return;
     }
     
-    final String? nombre = _nombreController.text.trim().isNotEmpty 
-        ? _nombreController.text.trim() 
-        : null;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
     
-    final response = await _apiService.editarPerfil(
-      token,  // ✅ Usar el token validado
-      nombre: nombre,
-      fotoPerfil: _imagenSeleccionada,
-    );
-    
-    if (response['success']) {
-      // Actualizar caché local
-      await _actualizarCacheLocal(nombre);
+    try {
+      final token = await _getValidToken();
+      if (token.isEmpty) {
+        setState(() {
+          _errorMessage = 'Sesión expirada. Por favor inicia sesión nuevamente.';
+          _isLoading = false;
+        });
+        return;
+      }
       
-      _showSnack(response['message']);
-      Navigator.pop(context, true);
-    } else {
+      final String? nombre = _nombreController.text.trim().isNotEmpty 
+          ? _nombreController.text.trim() 
+          : null;
+      
+      final response = await _apiService.editarPerfil(
+        token,
+        nombre: nombre,
+        fotoPerfil: _imagenSeleccionada,
+      );
+      
+      if (response['success']) {
+        await _actualizarCacheLocal(nombre);
+        _showSnack(response['message']);
+        Navigator.pop(context, true);
+      } else {
+        setState(() {
+          _errorMessage = response['message'] ?? 'Error al actualizar perfil';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
       setState(() {
-        _errorMessage = response['message'] ?? 'Error al actualizar perfil';
+        _errorMessage = 'Error de conexión: ${e.toString()}';
         _isLoading = false;
       });
     }
-  } catch (e) {
-    setState(() {
-      _errorMessage = 'Error de conexión: ${e.toString()}';
-      _isLoading = false;
-    });
   }
-}
 
   Future<void> _actualizarCacheLocal(String? nuevoNombre) async {
-  try {
-    final usuarioCache = await _dbService.getUsuarioCache();
-    if (usuarioCache != null) {
-      if (nuevoNombre != null && nuevoNombre.isNotEmpty) {
-        usuarioCache['nombre'] = nuevoNombre;
+    try {
+      final usuarioCache = await _dbService.getUsuarioCache();
+      if (usuarioCache != null) {
+        if (nuevoNombre != null && nuevoNombre.isNotEmpty) {
+          usuarioCache['nombre'] = nuevoNombre;
+        }
+        await _dbService.guardarUsuario(usuarioCache);
       }
-      await _dbService.guardarUsuario(usuarioCache);
-      print('✅ Caché local actualizada');
+    } catch (e) {
+      print('Error actualizando caché: $e');
     }
-  } catch (e) {
-    print('Error actualizando caché: $e');
   }
-}
 
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: isError ? Colors.red : Colors.green,
+        backgroundColor: isError ? AppTheme.error : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
+    );
+  }
+
+  void _mostrarOpcionesImagen() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.border,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Foto de perfil',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: Icon(Icons.photo_library, color: AppTheme.green),
+                title: const Text('Galería', style: TextStyle(color: AppTheme.textPrimary)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _seleccionarImagen();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.camera_alt, color: AppTheme.green),
+                title: const Text('Cámara', style: TextStyle(color: AppTheme.textPrimary)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _tomarFoto();
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final bool tieneFotoActual = _fotoActualUrl != null && _fotoActualUrl!.isNotEmpty;
-    
+
     return Scaffold(
+      backgroundColor: AppTheme.bgDark,
       appBar: AppBar(
-        title: Text('Editar Perfil'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        title: const Text('Editar Perfil', style: TextStyle(color: AppTheme.textPrimary)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
         actions: [
           if (!_isOnline)
             Container(
-              margin: EdgeInsets.only(right: 16),
+              margin: const EdgeInsets.only(right: 16),
               child: Row(
                 children: [
-                  Icon(Icons.wifi_off, size: 16, color: Colors.white),
-                  SizedBox(width: 4),
-                  Text('Offline', style: TextStyle(fontSize: 12)),
+                  Icon(Icons.wifi_off, size: 16, color: AppTheme.warning),
+                  const SizedBox(width: 4),
+                  Text('Offline', style: TextStyle(fontSize: 12, color: AppTheme.warning)),
                 ],
               ),
             ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
-              // Foto de perfil actual
+              // Foto de perfil
               Center(
                 child: Stack(
                   children: [
-                    // Foto actual o nueva
                     Container(
                       width: 120,
                       height: 120,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.blue, width: 3),
+                        border: Border.all(color: AppTheme.green, width: 3),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.green.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: ClipOval(
                         child: _imagenSeleccionada != null
@@ -220,25 +277,38 @@ Future<String> _getValidToken() async {
                                     width: 120,
                                     height: 120,
                                     fit: BoxFit.cover,
-                                    placeholder: (context, url) => 
-                                        Center(child: CircularProgressIndicator()),
-                                    errorWidget: (context, url, error) => 
-                                        Icon(Icons.person, size: 60, color: Colors.grey),
+                                    placeholder: (context, url) => const Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                    errorWidget: (context, url, error) => Icon(
+                                      Icons.person,
+                                      size: 60,
+                                      color: AppTheme.textSecondary,
+                                    ),
                                   )
-                                : Icon(Icons.person, size: 60, color: Colors.grey)),
+                                : Icon(
+                                    Icons.person,
+                                    size: 60,
+                                    color: AppTheme.textSecondary,
+                                  )),
                       ),
                     ),
-                    // Botón para cambiar foto
                     Positioned(
                       bottom: 0,
                       right: 0,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.blue,
+                          color: AppTheme.green,
                           shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.green.withOpacity(0.4),
+                              blurRadius: 8,
+                            ),
+                          ],
                         ),
                         child: IconButton(
-                          icon: Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                          icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
                           onPressed: _isOnline ? _mostrarOpcionesImagen : null,
                           tooltip: 'Cambiar foto',
                         ),
@@ -248,18 +318,28 @@ Future<String> _getValidToken() async {
                 ),
               ),
               
-              SizedBox(height: 24),
+              const SizedBox(height: 24),
               
-              // Campo de nombre
+              // Campo nombre
               TextFormField(
                 controller: _nombreController,
                 enabled: _isOnline,
+                style: const TextStyle(color: AppTheme.textPrimary),
                 decoration: InputDecoration(
                   labelText: 'Nombre completo',
                   hintText: 'Ingresa tu nombre',
-                  prefixIcon: Icon(Icons.person),
+                  prefixIcon: Icon(Icons.person, color: AppTheme.green),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.green, width: 2),
                   ),
                 ),
                 validator: (value) {
@@ -273,23 +353,29 @@ Future<String> _getValidToken() async {
                 },
               ),
               
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               
               // Email (solo lectura)
               TextFormField(
                 initialValue: widget.userData['email'] ?? '',
                 readOnly: true,
+                style: const TextStyle(color: AppTheme.textSecondary),
                 decoration: InputDecoration(
                   labelText: 'Correo electrónico',
-                  prefixIcon: Icon(Icons.email),
+                  prefixIcon: Icon(Icons.email, color: AppTheme.green),
+                  suffixIcon: Icon(Icons.lock, color: AppTheme.textSecondary),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.border),
                   ),
-                  suffixIcon: Icon(Icons.lock, color: Colors.grey),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.border),
+                  ),
                 ),
               ),
               
-              SizedBox(height: 24),
+              const SizedBox(height: 24),
               
               // Botón guardar
               if (_isOnline)
@@ -298,35 +384,35 @@ Future<String> _getValidToken() async {
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _guardarCambios,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppTheme.green,
                       foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(vertical: 16),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     child: _isLoading
-                        ? CircularProgressIndicator(color: Colors.white)
-                        : Text('Guardar Cambios', style: TextStyle(fontSize: 16)),
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('Guardar Cambios', style: TextStyle(fontSize: 16)),
                   ),
                 ),
               
               if (!_isOnline)
                 Container(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
+                    color: AppTheme.warningBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.shade200),
+                    border: Border.all(color: AppTheme.warning),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.wifi_off, color: Colors.orange),
-                      SizedBox(width: 12),
+                      Icon(Icons.wifi_off, color: AppTheme.warning),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           'Sin conexión a internet. Conéctate para editar tu perfil.',
-                          style: TextStyle(color: Colors.orange.shade800),
+                          style: TextStyle(color: AppTheme.warning),
                         ),
                       ),
                     ],
@@ -334,17 +420,17 @@ Future<String> _getValidToken() async {
                 ),
               
               if (_errorMessage.isNotEmpty) ...[
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 Container(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade50,
+                    color: AppTheme.errorBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
+                    border: Border.all(color: AppTheme.error),
                   ),
                   child: Text(
                     _errorMessage,
-                    style: TextStyle(color: Colors.red.shade700),
+                    style: TextStyle(color: AppTheme.error),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -353,51 +439,6 @@ Future<String> _getValidToken() async {
           ),
         ),
       ),
-    );
-  }
-
-  void _mostrarOpcionesImagen() {
-    showModalBottomSheet(
-      context: context,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(Icons.photo_library, color: Colors.blue),
-                title: Text('Galería'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _seleccionarImagen();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.camera_alt, color: Colors.blue),
-                title: Text('Cámara'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _tomarFoto();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.delete, color: Colors.red),
-                title: Text('Eliminar foto actual', style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(() {
-                    _imagenSeleccionada = null;
-                    _fotoActualUrl = null;
-                  });
-                },
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 

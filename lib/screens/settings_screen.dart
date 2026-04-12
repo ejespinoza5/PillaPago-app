@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../services/connectivity_service.dart';
+import '../theme/app_theme.dart';
 import 'manage_employees_screen.dart';
 import 'login_screen.dart';
 import 'edit_profile_screen.dart';
@@ -80,8 +84,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Modo offline - Mostrando datos guardados'),
-            backgroundColor: Colors.orange,
+            backgroundColor: AppTheme.warning,
             duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       }
@@ -112,17 +118,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Cerrar Sesión'),
-          content: Text('¿Estás seguro de que deseas cerrar sesión?'),
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Cerrar Sesión', style: TextStyle(color: AppTheme.textPrimary)),
+          content: const Text('¿Estás seguro de que deseas cerrar sesión?', style: TextStyle(color: AppTheme.textSecondary)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancelar'),
+              child: Text('Cancelar', style: TextStyle(color: AppTheme.textSecondary)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: Text('Cerrar Sesión'),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+              child: const Text('Cerrar Sesión', style: TextStyle(color: AppTheme.error)),
             ),
           ],
         );
@@ -153,8 +163,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Esta opción requiere conexión a internet'),
-        backgroundColor: Colors.orange,
+        backgroundColor: AppTheme.warning,
         duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _showSnack(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? AppTheme.error : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -171,105 +195,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-  void _showSnack(String msg, {bool isError = false}) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(msg),
-      backgroundColor: isError ? Colors.red : Colors.green,
-    ),
-  );
-}
-void _confirmarSalirDelNegocio() async {
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: Text('Salir del negocio'),
-        content: Text(
-          '¿Estás seguro de que deseas salir de este negocio?\n\n'
-          'Perderás acceso a todas las transferencias y datos del negocio. '
-          'Podrás unirte a otro negocio más tarde.',
-          style: TextStyle(fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.orange),
-            child: Text('Salir', style: TextStyle(color: Colors.orange)),
-          ),
-        ],
-      );
-    },
-  );
 
-  if (confirm == true) {
-    await _salirDelNegocio();
-  }
-}
-
-Future<void> _salirDelNegocio() async {
-  setState(() {
-    _isLoading = true;
-  });
-
-  try {
-    final token = await _getValidToken();
+  Future<String> _getValidToken() async {
+    String token = widget.token;
     if (token.isEmpty) {
-      _showSnack('Sesión expirada. Por favor inicia sesión nuevamente.', isError: true);
-      setState(() {
-        _isLoading = false;
-      });
-      return;
+      final prefs = await SharedPreferences.getInstance();
+      token = prefs.getString('token') ?? '';
     }
+    return token;
+  }
 
-    final response = await _apiService.salirDelNegocio(token);
-
-    if (response['success']) {
-      _showSnack(response['message']);
-      
-      // ✅ NO limpiar los tokens, solo limpiar la caché del negocio
-      // await ApiService.clearTokens();  // ❌ Eliminar esta línea
-      
-      // Limpiar solo la caché de transferencias y totales
-      await _dbService.limpiarTransferenciasCache();
-      
-      // Navegar a RoleSelectionScreen para elegir un nuevo rol/negocio
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(
-            builder: (_) => RoleSelectionScreen(token: token), // ✅ Usar el mismo token
+  void _confirmarSalirDelNegocio() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          (route) => false,
+          title: const Text('Salir del negocio', style: TextStyle(color: AppTheme.textPrimary)),
+          content: Text(
+            '¿Estás seguro de que deseas salir de este negocio?\n\n'
+            'Perderás acceso a todas las transferencias y datos del negocio. '
+            'Podrás unirte a otro negocio más tarde.',
+            style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancelar', style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.warning),
+              child: Text('Salir', style: TextStyle(color: AppTheme.warning)),
+            ),
+          ],
         );
+      },
+    );
+
+    if (confirm == true) {
+      await _salirDelNegocio();
+    }
+  }
+
+  Future<void> _salirDelNegocio() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final token = await _getValidToken();
+      if (token.isEmpty) {
+        _showSnack('Sesión expirada. Por favor inicia sesión nuevamente.', isError: true);
+        setState(() {
+          _isLoading = false;
+        });
+        return;
       }
-    } else {
-      _showSnack(response['message'] ?? 'Error al salir del negocio', isError: true);
+
+      final response = await _apiService.salirDelNegocio(token);
+
+      if (response['success']) {
+        _showSnack(response['message']);
+        
+        await _dbService.limpiarTransferenciasCache();
+        
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RoleSelectionScreen(token: token),
+            ),
+            (route) => false,
+          );
+        }
+      } else {
+        _showSnack(response['message'] ?? 'Error al salir del negocio', isError: true);
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error en _salirDelNegocio: $e');
+      _showSnack('Error de conexión: ${e.toString()}', isError: true);
       setState(() {
         _isLoading = false;
       });
     }
-  } catch (e) {
-    print('Error en _salirDelNegocio: $e');
-    _showSnack('Error de conexión: ${e.toString()}', isError: true);
-    setState(() {
-      _isLoading = false;
-    });
   }
-}
 
-Future<String> _getValidToken() async {
-  String token = widget.token;
-  if (token.isEmpty) {
-    final prefs = await SharedPreferences.getInstance();
-    token = prefs.getString('token') ?? '';
-  }
-  return token;
-}
   void _showBusinessInfoDialog() {
     final negocio = _userData['negocio'] ?? {};
     
@@ -277,39 +294,43 @@ Future<String> _getValidToken() async {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Información del Negocio'),
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Información del Negocio', style: TextStyle(color: AppTheme.textPrimary)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Nombre:',
-                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700]),
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
               ),
-              Text(_userData['nombre_negocio'] ?? 'No disponible'),
-              SizedBox(height: 12),
+              Text(_userData['nombre_negocio'] ?? 'No disponible', style: const TextStyle(color: AppTheme.textPrimary)),
+              const SizedBox(height: 12),
               Text(
                 'Código de invitación:',
-                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700]),
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
               ),
               SelectableText(
                 _userData['codigo_negocio'] ?? 'No disponible',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
               ),
               if (_userData['es_dueno'] == false) ...[
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 Text(
                   'Tu rol:',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700]),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
                 ),
-                Text(_userData['cargo'] ?? 'Empleado'),
+                Text(_userData['cargo'] ?? 'Empleado', style: const TextStyle(color: AppTheme.textPrimary)),
               ],
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cerrar'),
+              child: Text('Cerrar', style: TextStyle(color: AppTheme.textSecondary)),
             ),
           ],
         );
@@ -317,148 +338,231 @@ Future<String> _getValidToken() async {
     );
   }
 
-  void _showInvitationCodeDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Código de Invitación'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.business, size: 48, color: Colors.blue),
-              SizedBox(height: 16),
-              Text(
-                'Comparte este código con tus empleados:',
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 16),
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: SelectableText(
-                  _userData['codigo_negocio'] ?? 'No disponible',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cerrar'),
-            ),
-          ],
-        );
-      },
+  void _copiarCodigo(String codigo) {
+    Clipboard.setData(ClipboardData(text: codigo));
+    _showSnack('Código copiado al portapapeles');
+  }
+
+  void _compartirCodigo(String codigo) async {
+    await Share.share(
+      '📱 *PillaPago* - Invitación\n\n'
+      'Únete a mi negocio usando este código:\n'
+      '`$codigo`\n\n'
+      'Descarga la app: [link de descarga]',
     );
   }
 
-  void _showAboutDialog() {
+void _showInvitationCodeDialog() {
+  final codigoNegocio = _userData['codigo_negocio'] ?? 'No disponible';
+
   showDialog(
     context: context,
     builder: (BuildContext context) {
-      return AlertDialog(
+      return Dialog(
+        backgroundColor: AppTheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
         ),
-        title: Column(
-          children: [
-            Icon(Icons.payment, size: 56, color: Colors.blue),
-            SizedBox(height: 8),
-            Text(
-              'PillaPago',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Versión 1.0.0',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              SizedBox(height: 16),
-              Divider(),
-              SizedBox(height: 16),
-              Text(
-                'Registro de Transferencias',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
+                'Código de Invitación',
+                style: const TextStyle(
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue,
+                  color: AppTheme.textPrimary,
                 ),
               ),
-              SizedBox(height: 12),
-              Text(
-                'Registra tus transferencias bancarias de forma rápida y sencilla.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14),
+              const SizedBox(height: 16),
+
+              // ✅ Contenedor del QR con logo superpuesto en Stack
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: SizedBox(
+                  width: 200,
+                  height: 200,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // 1️⃣ QR sin logo embebido pero con alta corrección de errores
+                      QrImageView(
+                        data: codigoNegocio,
+                        version: QrVersions.auto,
+                        size: 200,
+                        gapless: false,
+                        errorCorrectionLevel: QrErrorCorrectLevel.H,
+                        eyeStyle: QrEyeStyle(
+                          color: AppTheme.green,
+                          eyeShape: QrEyeShape.circle,
+                        ),
+                        dataModuleStyle: QrDataModuleStyle(
+                          color: AppTheme.green,
+                          dataModuleShape: QrDataModuleShape.circle,
+                        ),
+                      ),
+
+                      // 2️⃣ Fondo blanco circular que "borra" el centro del QR
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+
+                      // 3️⃣ Logo encima del hueco blanco
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/images/solo logo.png',
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              SizedBox(height: 12),
+
+              const SizedBox(height: 16),
+
               Text(
-                '✓ Registro de transferencias\n✓ Almacenamiento offline\n✓ Sincronización automática\n✓ Historial de transacciones',
-                textAlign: TextAlign.left,
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                'Código:',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textSecondary,
+                ),
               ),
-              SizedBox(height: 16),
-              Divider(),
-              SizedBox(height: 12),
+              const SizedBox(height: 4),
+              SelectableText(
+                codigoNegocio,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  Icon(Icons.developer_mode, size: 16, color: Colors.blue),
-                  SizedBox(width: 8),
-                  Text(
-                    'Desarrollado por MutanTech',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                  OutlinedButton.icon(
+                    onPressed: () => _copiarCodigo(codigoNegocio),
+                    icon: Icon(Icons.copy, size: 18, color: AppTheme.green),
+                    label: const Text('Copiar'),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: AppTheme.border),
+                      foregroundColor: AppTheme.textPrimary,
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _compartirCodigo(codigoNegocio),
+                    icon: const Icon(Icons.share, size: 18, color: Colors.white),
+                    label: const Text('Compartir'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.green,
+                      foregroundColor: Colors.white,
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 8),
-              Text(
-                '© 2024 MutanTech. Todos los derechos reservados.',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey[400],
-                ),
-              ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cerrar',
-              style: TextStyle(color: Colors.blue),
-            ),
-          ),
-        ],
       );
     },
   );
 }
+
+  void _showAboutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Column(
+            children: [
+              Icon(Icons.payment, size: 56, color: AppTheme.green),
+              const SizedBox(height: 8),
+              const Text(
+                'PillaPago',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Versión 1.0.0',
+                  style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 16),
+                Divider(color: AppTheme.border),
+                const SizedBox(height: 16),
+                const Text(
+                  'Registro de Transferencias',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.green),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Registra tus transferencias bancarias de forma rápida y sencilla.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '✓ Registro de transferencias\n✓ Almacenamiento offline\n✓ Sincronización automática\n✓ Historial de transacciones',
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 16),
+                Divider(color: AppTheme.border),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.developer_mode, size: 16, color: AppTheme.green),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Desarrollado por MutanTech',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textPrimary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '© 2024 MutanTech. Todos los derechos reservados.',
+                  style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cerrar', style: TextStyle(color: AppTheme.green)),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -467,38 +571,44 @@ Future<String> _getValidToken() async {
     final bool esDueno = _userData['es_dueno'] ?? false;
 
     return Scaffold(
+      backgroundColor: AppTheme.bgDark,
       appBar: AppBar(
         title: Row(
           children: [
-            Text("Configuración"),
-            SizedBox(width: 8),
+            const Text("Configuración", style: TextStyle(color: AppTheme.textPrimary)),
+            const SizedBox(width: 8),
             Container(
               width: 10,
               height: 10,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _isOnline ? Colors.green : Colors.red,
+                color: _isOnline ? AppTheme.green : AppTheme.error,
               ),
             ),
           ],
         ),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
       ),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : _errorMessage.isNotEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.error_outline, size: 64, color: Colors.red),
-                      SizedBox(height: 16),
-                      Text(_errorMessage),
-                      SizedBox(height: 16),
+                      Icon(Icons.error_outline, size: 64, color: AppTheme.error),
+                      const SizedBox(height: 16),
+                      Text(_errorMessage, style: const TextStyle(color: AppTheme.error)),
+                      const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: _loadUserData,
-                        child: Text('Reintentar'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.green,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Reintentar'),
                       ),
                     ],
                   ),
@@ -507,330 +617,360 @@ Future<String> _getValidToken() async {
                   child: Column(
                     children: [
                       // Perfil
-                      Container(
-                        color: Colors.blue.shade50,
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Column(
-                            children: [
-                              _buildProfileImage(fotoPerfilUrl, tieneFoto, _userData['nombre']),
-                              SizedBox(height: 12),
-                              Text(
-                                _userData['nombre'] ?? 'Usuario',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                _userData['email'] ?? 'Sin email',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              SizedBox(height: 8),
-                              Container(
-                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: esDueno ? Colors.green.shade100 : Colors.orange.shade100,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  esDueno ? 'Dueño' : 'Empleado',
-                                  style: TextStyle(
-                                    color: esDueno ? Colors.green.shade800 : Colors.orange.shade800,
-                                    fontWeight: FontWeight.bold,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                        child: Card(
+                          color: AppTheme.surfaceLight,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(color: AppTheme.border.withOpacity(0.5), width: 1),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Row(
+                              children: [
+                                _buildProfileImage(fotoPerfilUrl, tieneFoto, _userData['nombre']),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _userData['nombre'] ?? 'Usuario',
+                                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _userData['email'] ?? 'Sin email',
+                                        style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: esDueno ? AppTheme.green.withOpacity(0.2) : AppTheme.warning.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: Text(
+                                          esDueno ? 'Dueño' : 'Empleado',
+                                          style: TextStyle(
+                                            color: esDueno ? AppTheme.green : AppTheme.warning,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
                       
                       // Opciones de configuración
                       Padding(
-                        padding: EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            // Opción: Editar perfil
+                            // Editar Perfil
                             Card(
-  elevation: 2,
-  child: ListTile(
-    leading: CircleAvatar(
-      backgroundColor: Colors.blue.shade100,
-      child: Icon(Icons.person, color: Colors.blue),
-    ),
-    title: Text('Editar Perfil'),
-    subtitle: Text('Cambiar nombre, foto de perfil'),
-    trailing: Icon(Icons.chevron_right),
-    onTap: () async {
-      if (!_isOnline) {
-        _showOfflineMessage();
-        return;
-      }
-      final result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EditProfileScreen(
-            token: widget.token,
-            userData: _userData,
-          ),
-        ),
-      );
-      if (result == true) {
-        await _loadUserData(); // Recargar datos después de editar
-      }
-    },
-  ),
-),
-                            
-                            SizedBox(height: 12),
-                            
-                            // Opción: Cambiar contraseña (solo para usuarios con email/password)
-if (_userData['google_id'] == null)
-  Card(
-    elevation: 2,
-    child: ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Colors.orange.shade100,
-        child: Icon(Icons.lock, color: Colors.orange),
-      ),
-      title: Text('Cambiar Contraseña'),
-      subtitle: Text('Actualizar tu contraseña'),
-      trailing: Icon(Icons.chevron_right),
-      onTap: () async {
-        if (!_isOnline) {
-          _showOfflineMessage();
-          return;
-        }
-        final result = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ChangePasswordScreen(token: widget.token),
-          ),
-        );
-        if (result == true) {
-          // Si se cambió la contraseña, mostrar mensaje
-          _showSnack('Contraseña actualizada correctamente');
-        }
-      },
-    ),
-  ),
-  // Opción: Cambiar Correo (solo para usuarios con email/password)
-if (_userData['google_id'] == null)
-  Card(
-    elevation: 2,
-    child: ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Colors.purple.shade100,
-        child: Icon(Icons.email, color: Colors.purple),
-      ),
-      title: Text('Cambiar Correo'),
-      subtitle: Text('Actualizar tu correo electrónico'),
-      trailing: Icon(Icons.chevron_right),
-      onTap: () async {
-        if (!_isOnline) {
-          _showOfflineMessage();
-          return;
-        }
-        final result = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ChangeEmailScreen(
-              token: widget.token,
-              currentEmail: _userData['email'] ?? '',
-            ),
-          ),
-        );
-        if (result == true) {
-          await _loadUserData(); // Recargar datos
-          _showSnack('Correo actualizado correctamente');
-        }
-      },
-    ),
-  ),
-                            
-                            if (_userData['google_id'] == null)
-                              SizedBox(height: 12),
-                            
-                            // Opción: Información del negocio
-                            Card(
+                              color: AppTheme.surface,
                               elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
                               child: ListTile(
                                 leading: CircleAvatar(
-                                  backgroundColor: Colors.green.shade100,
-                                  child: Icon(Icons.business, color: Colors.green),
+                                  backgroundColor: AppTheme.green.withOpacity(0.2),
+                                  child: Icon(Icons.person, color: AppTheme.green),
                                 ),
-                                title: Text('Información del Negocio'),
-                                subtitle: Text('Ver detalles de tu negocio'),
-                                trailing: Icon(Icons.chevron_right),
+                                title: const Text('Editar Perfil', style: TextStyle(color: AppTheme.textPrimary)),
+                                subtitle: const Text('Cambiar nombre, foto de perfil', style: TextStyle(color: AppTheme.textSecondary)),
+                                trailing: Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+                                onTap: () async {
+                                  if (!_isOnline) {
+                                    _showOfflineMessage();
+                                    return;
+                                  }
+                                  final result = await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => EditProfileScreen(
+                                        token: widget.token,
+                                        userData: _userData,
+                                      ),
+                                    ),
+                                  );
+                                  if (result == true) {
+                                    await _loadUserData();
+                                  }
+                                },
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 12),
+                            
+                            // Cambiar Contraseña
+                            if (_userData['google_id'] == null)
+                              Card(
+                                color: AppTheme.surface,
+                                elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: AppTheme.warning.withOpacity(0.2),
+                                    child: Icon(Icons.lock, color: AppTheme.warning),
+                                  ),
+                                  title: const Text('Cambiar Contraseña', style: TextStyle(color: AppTheme.textPrimary)),
+                                  subtitle: const Text('Actualizar tu contraseña', style: TextStyle(color: AppTheme.textSecondary)),
+                                  trailing: Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+                                  onTap: () async {
+                                    if (!_isOnline) {
+                                      _showOfflineMessage();
+                                      return;
+                                    }
+                                    final result = await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ChangePasswordScreen(token: widget.token),
+                                      ),
+                                    );
+                                    if (result == true) {
+                                      _showSnack('Contraseña actualizada correctamente');
+                                    }
+                                  },
+                                ),
+                              ),
+                            
+                            // Cambiar Correo
+                            if (_userData['google_id'] == null)
+                              Card(
+                                color: AppTheme.surface,
+                                elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: AppTheme.green.withOpacity(0.2),
+                                    child: Icon(Icons.email, color: AppTheme.green),
+                                  ),
+                                  title: const Text('Cambiar Correo', style: TextStyle(color: AppTheme.textPrimary)),
+                                  subtitle: const Text('Actualizar tu correo electrónico', style: TextStyle(color: AppTheme.textSecondary)),
+                                  trailing: Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+                                  onTap: () async {
+                                    if (!_isOnline) {
+                                      _showOfflineMessage();
+                                      return;
+                                    }
+                                    final result = await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ChangeEmailScreen(
+                                          token: widget.token,
+                                          currentEmail: _userData['email'] ?? '',
+                                        ),
+                                      ),
+                                    );
+                                    if (result == true) {
+                                      await _loadUserData();
+                                      _showSnack('Correo actualizado correctamente');
+                                    }
+                                  },
+                                ),
+                              ),
+                            
+                            if (_userData['google_id'] == null)
+                              const SizedBox(height: 12),
+                            
+                            // Información del Negocio
+                            Card(
+                              color: AppTheme.surface,
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: AppTheme.green.withOpacity(0.2),
+                                  child: Icon(Icons.business, color: AppTheme.green),
+                                ),
+                                title: const Text('Información del Negocio', style: TextStyle(color: AppTheme.textPrimary)),
+                                subtitle: const Text('Ver detalles de tu negocio', style: TextStyle(color: AppTheme.textSecondary)),
+                                trailing: Icon(Icons.chevron_right, color: AppTheme.textSecondary),
                                 onTap: _showBusinessInfoDialog,
                               ),
                             ),
                             
-                            SizedBox(height: 12),
+                            const SizedBox(height: 12),
                             
-                            // Opción: Gestionar Empleados
+                            // Gestionar Empleados
                             if (esDueno)
                               Card(
+                                color: AppTheme.surface,
                                 elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
                                 child: ListTile(
                                   leading: CircleAvatar(
-                                    backgroundColor: Colors.teal.shade100,
-                                    child: Icon(Icons.people, color: Colors.teal),
+                                    backgroundColor: AppTheme.green.withOpacity(0.2),
+                                    child: Icon(Icons.people, color: AppTheme.green),
                                   ),
-                                  title: Text('Gestionar Empleados'),
-                                  subtitle: Text('Ver y administrar empleados'),
-                                  trailing: Icon(Icons.chevron_right),
+                                  title: const Text('Gestionar Empleados', style: TextStyle(color: AppTheme.textPrimary)),
+                                  subtitle: const Text('Ver y administrar empleados', style: TextStyle(color: AppTheme.textSecondary)),
+                                  trailing: Icon(Icons.chevron_right, color: AppTheme.textSecondary),
                                   onTap: _navigateToManageEmployees,
                                 ),
                               ),
                             
-                            if (esDueno) SizedBox(height: 12),
+                            if (esDueno) const SizedBox(height: 12),
                             
-                            // Opción: Compartir código
+                            // Compartir Código
                             if (esDueno)
                               Card(
+                                color: AppTheme.surface,
                                 elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
                                 child: ListTile(
                                   leading: CircleAvatar(
-                                    backgroundColor: Colors.purple.shade100,
-                                    child: Icon(Icons.share, color: Colors.purple),
+                                    backgroundColor: AppTheme.green.withOpacity(0.2),
+                                    child: Icon(Icons.share, color: AppTheme.green),
                                   ),
-                                  title: Text('Compartir Código'),
-                                  subtitle: Text('Invitar empleados a tu negocio'),
-                                  trailing: Icon(Icons.chevron_right),
+                                  title: const Text('Compartir Código', style: TextStyle(color: AppTheme.textPrimary)),
+                                  subtitle: const Text('Invitar empleados a tu negocio', style: TextStyle(color: AppTheme.textSecondary)),
+                                  trailing: Icon(Icons.chevron_right, color: AppTheme.textSecondary),
                                   onTap: _showInvitationCodeDialog,
                                 ),
                               ),
                             
-                            if (esDueno) SizedBox(height: 12),
-                            // Opción: Salir del negocio
-Card(
-  elevation: 2,
-  color: Colors.orange.shade50,
-  child: ListTile(
-    leading: CircleAvatar(
-      backgroundColor: Colors.orange.shade100,
-      child: Icon(Icons.exit_to_app, color: Colors.orange),
-    ),
-    title: Text(
-      'Salir del negocio',
-      style: TextStyle(color: Colors.orange.shade800),
-    ),
-    subtitle: Text(
-      'Dejar de pertenecer a este negocio',
-      style: TextStyle(color: Colors.orange.shade700),
-    ),
-    trailing: Icon(Icons.chevron_right, color: Colors.orange),
-    onTap: _confirmarSalirDelNegocio,
-  ),
-),
-
-SizedBox(height: 12),
-                            // Opción: Cerrar sesión
+                            if (esDueno) const SizedBox(height: 12),
+                            
+                            // Salir del negocio
                             Card(
+                              color: AppTheme.surface,
                               elevation: 2,
-                              color: Colors.red.shade50,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
                               child: ListTile(
                                 leading: CircleAvatar(
-                                  backgroundColor: Colors.red.shade100,
-                                  child: Icon(Icons.exit_to_app, color: Colors.red),
+                                  backgroundColor: AppTheme.warning.withOpacity(0.2),
+                                  child: Icon(Icons.exit_to_app, color: AppTheme.warning),
+                                ),
+                                title: Text(
+                                  'Salir del negocio',
+                                  style: TextStyle(color: AppTheme.warning),
+                                ),
+                                subtitle: Text(
+                                  'Dejar de pertenecer a este negocio',
+                                  style: TextStyle(color: AppTheme.warning),
+                                ),
+                                trailing: Icon(Icons.chevron_right, color: AppTheme.warning),
+                                onTap: _confirmarSalirDelNegocio,
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 12),
+                            
+                            // Cerrar Sesión
+                            Card(
+                              color: AppTheme.surface,
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: AppTheme.error.withOpacity(0.2),
+                                  child: Icon(Icons.logout, color: AppTheme.error),
                                 ),
                                 title: Text(
                                   'Cerrar Sesión',
-                                  style: TextStyle(color: Colors.red),
+                                  style: TextStyle(color: AppTheme.error),
                                 ),
                                 subtitle: Text(
                                   'Salir de tu cuenta',
-                                  style: TextStyle(color: Colors.red.shade700),
+                                  style: TextStyle(color: AppTheme.error),
                                 ),
-                                trailing: Icon(Icons.chevron_right, color: Colors.red),
+                                trailing: Icon(Icons.chevron_right, color: AppTheme.error),
                                 onTap: _logout,
                               ),
                             ),
                             
-                            SizedBox(height: 24),
+                            const SizedBox(height: 24),
                             
-                            // Indicador de modo offline
                             if (!_isOnline)
                               Container(
-                                padding: EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.orange.shade50,
+                                  color: AppTheme.warningBg,
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.orange.shade200),
+                                  border: Border.all(color: AppTheme.warning),
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.wifi_off, color: Colors.orange),
-                                    SizedBox(width: 12),
+                                    Icon(Icons.wifi_off, color: AppTheme.warning),
+                                    const SizedBox(width: 12),
                                     Expanded(
                                       child: Text(
                                         'Modo offline. Algunas opciones están deshabilitadas.',
-                                        style: TextStyle(color: Colors.orange.shade800, fontSize: 12),
+                                        style: TextStyle(color: AppTheme.warning),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                             
-                            SizedBox(height: 24),
+                            const SizedBox(height: 24),
                             
-                            // Versión de la app y Acerca de
+                            // Acerca de
                             Card(
-                              elevation: 0,
                               color: Colors.transparent,
+                              elevation: 0,
                               child: Column(
                                 children: [
-                                  Divider(color: Colors.grey.shade300),
-                                  SizedBox(height: 16),
-                                  // Acerca de
+                                  Divider(color: AppTheme.border),
+                                  const SizedBox(height: 16),
                                   ListTile(
                                     leading: CircleAvatar(
-                                      backgroundColor: Colors.grey.shade200,
-                                      child: Icon(Icons.info_outline, color: Colors.blue),
+                                      backgroundColor: AppTheme.green.withOpacity(0.2),
+                                      child: Icon(Icons.info_outline, color: AppTheme.green),
                                     ),
-                                    title: Text(
-                                      'Acerca de',
-                                      style: TextStyle(fontWeight: FontWeight.w500),
-                                    ),
-                                    subtitle: Text('Información de la aplicación'),
-                                    trailing: Icon(Icons.chevron_right, color: Colors.grey),
+                                    title: const Text('Acerca de', style: TextStyle(color: AppTheme.textPrimary)),
+                                    subtitle: const Text('Información de la aplicación', style: TextStyle(color: AppTheme.textSecondary)),
+                                    trailing: Icon(Icons.chevron_right, color: AppTheme.textSecondary),
                                     onTap: _showAboutDialog,
                                   ),
-                                  SizedBox(height: 8),
-                                  // Desarrollado por
+                                  const SizedBox(height: 8),
                                   Container(
-                                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                     child: Column(
                                       children: [
                                         Text(
                                           'Desarrollado por',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[500],
-                                          ),
+                                          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                                         ),
-                                        SizedBox(height: 4),
+                                        const SizedBox(height: 4),
                                         Text(
                                           'MutanTech',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blue.shade700,
-                                          ),
+                                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.green),
                                         ),
-                                        SizedBox(height: 2),
+                                        const SizedBox(height: 2),
                                         Text(
                                           'mutantech.dev@gmail.com',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.grey[400],
-                                          ),
+                                          style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
                                         ),
                                       ],
                                     ),
@@ -860,18 +1000,14 @@ SizedBox(height: 12),
           placeholder: (context, url) => Container(
             width: size,
             height: size,
-            child: CircularProgressIndicator(),
+            child: const CircularProgressIndicator(),
           ),
           errorWidget: (context, url, error) => CircleAvatar(
             radius: size / 2,
-            backgroundColor: Colors.blue.shade100,
+            backgroundColor: AppTheme.surfaceLight,
             child: Text(
               nombre?.substring(0, 1).toUpperCase() ?? 'U',
-              style: TextStyle(
-                fontSize: size / 2,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue.shade800,
-              ),
+              style: TextStyle(fontSize: size / 2, fontWeight: FontWeight.bold, color: AppTheme.green),
             ),
           ),
         ),
@@ -879,14 +1015,10 @@ SizedBox(height: 12),
     } else {
       return CircleAvatar(
         radius: size / 2,
-        backgroundColor: Colors.blue.shade100,
+        backgroundColor: AppTheme.surfaceLight,
         child: Text(
           nombre?.substring(0, 1).toUpperCase() ?? 'U',
-          style: TextStyle(
-            fontSize: size / 2,
-            fontWeight: FontWeight.bold,
-            color: Colors.blue.shade800,
-          ),
+          style: TextStyle(fontSize: size / 2, fontWeight: FontWeight.bold, color: AppTheme.green),
         ),
       );
     }

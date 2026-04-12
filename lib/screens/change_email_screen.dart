@@ -1,9 +1,11 @@
 // lib/screens/change_email_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/database_service.dart';
+import '../theme/app_theme.dart';
 
 class ChangeEmailScreen extends StatefulWidget {
   final String token;
@@ -26,13 +28,18 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
   
   final _formKey = GlobalKey<FormState>();
   final _newEmailController = TextEditingController();
-  final _codeController = TextEditingController();
+  
+  // ✅ Código con cuadros separados
+  final List<TextEditingController> _codeControllers = List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _codeFocusNodes = List.generate(6, (_) => FocusNode());
   
   bool _isLoading = false;
   bool _isOnline = true;
   bool _codeSent = false;
   String _errorMessage = '';
   String _successMessage = '';
+
+  String get _code => _codeControllers.map((c) => c.text).join();
 
   @override
   void initState() {
@@ -41,6 +48,22 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
     _connectivityService = ConnectivityService();
     _dbService = DatabaseService();
     _verificarConexion();
+  }
+
+  @override
+  void dispose() {
+    _newEmailController.dispose();
+    for (var c in _codeControllers) c.dispose();
+    for (var f in _codeFocusNodes) f.dispose();
+    super.dispose();
+  }
+
+  void _onCodeChanged(String value, int index) {
+    if (value.length == 1 && index < 5) {
+      _codeFocusNodes[index + 1].requestFocus();
+    } else if (value.isEmpty && index > 0) {
+      _codeFocusNodes[index - 1].requestFocus();
+    }
   }
 
   Future<void> _verificarConexion() async {
@@ -109,8 +132,8 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
   }
 
   Future<void> _confirmarCambio() async {
-    if (_codeController.text.trim().isEmpty) {
-      _showSnack('Ingresa el código de verificación', isError: true);
+    if (_code.length < 6) {
+      _showSnack('Ingresa los 6 dígitos del código de verificación', isError: true);
       return;
     }
     
@@ -133,17 +156,14 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
       final response = await _apiService.confirmarCambioEmail(
         token,
         newEmail: _newEmailController.text.trim(),
-        code: _codeController.text.trim(),
+        code: _code,
       );
       
       if (response['success']) {
-        // Actualizar caché local
         await _actualizarEmailEnCache(_newEmailController.text.trim());
-        
         _showSnack(response['message']);
         
-        // Regresar a la pantalla anterior después de 1.5 segundos
-        Future.delayed(Duration(seconds: 1), () {
+        Future.delayed(const Duration(seconds: 1), () {
           if (mounted) {
             Navigator.pop(context, true);
           }
@@ -168,7 +188,6 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
       if (usuarioCache != null) {
         usuarioCache['email'] = newEmail;
         await _dbService.guardarUsuario(usuarioCache);
-        print('✅ Email actualizado en caché local');
       }
     } catch (e) {
       print('Error actualizando email en caché: $e');
@@ -179,7 +198,10 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: isError ? Colors.red : Colors.green,
+        backgroundColor: isError ? AppTheme.error : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -187,73 +209,74 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.bgDark,
       appBar: AppBar(
-        title: Text('Cambiar Correo Electrónico'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        title: const Text('Cambiar Correo Electrónico', style: TextStyle(color: AppTheme.textPrimary)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
         actions: [
           if (!_isOnline)
             Container(
-              margin: EdgeInsets.only(right: 16),
+              margin: const EdgeInsets.only(right: 16),
               child: Row(
                 children: [
-                  Icon(Icons.wifi_off, size: 16, color: Colors.white),
-                  SizedBox(width: 4),
-                  Text('Offline', style: TextStyle(fontSize: 12)),
+                  Icon(Icons.wifi_off, size: 16, color: AppTheme.warning),
+                  const SizedBox(width: 4),
+                  Text('Offline', style: TextStyle(fontSize: 12, color: AppTheme.warning)),
                 ],
               ),
             ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Icono
               Icon(
                 Icons.email,
                 size: 80,
-                color: Colors.blue,
+                color: AppTheme.green,
               ),
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               
-              // Título
               Text(
                 _codeSent ? 'Verificar Código' : 'Cambiar Correo',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
                 ),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
                 _codeSent 
                     ? 'Ingresa el código de verificación enviado a tu nuevo correo'
                     : 'Ingresa tu nuevo correo electrónico',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.grey[600],
+                  color: AppTheme.textSecondary,
                 ),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 30),
+              const SizedBox(height: 30),
               
               // Correo actual (solo lectura)
               Container(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.border),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.email, color: Colors.grey),
-                    SizedBox(width: 12),
+                    Icon(Icons.email, color: AppTheme.textSecondary),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,13 +285,13 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
                             'Correo actual',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[600],
+                              color: AppTheme.textSecondary,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
                             widget.currentEmail,
-                            style: TextStyle(fontSize: 14),
+                            style: const TextStyle(color: AppTheme.textPrimary),
                           ),
                         ],
                       ),
@@ -277,19 +300,29 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
                 ),
               ),
               
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               
               // Nuevo correo
               if (!_codeSent)
                 TextFormField(
                   controller: _newEmailController,
                   keyboardType: TextInputType.emailAddress,
+                  style: const TextStyle(color: AppTheme.textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Nuevo correo electrónico',
                     hintText: 'Ingresa tu nuevo correo',
-                    prefixIcon: Icon(Icons.email_outlined),
+                    prefixIcon: Icon(Icons.email_outlined, color: AppTheme.green),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.green, width: 2),
                     ),
                   ),
                   validator: (value) {
@@ -306,57 +339,85 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
                   },
                 ),
               
-              // Código de verificación
-              if (_codeSent)
-                TextFormField(
-                  controller: _codeController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Código de verificación',
-                    hintText: 'Ingresa el código de 6 dígitos',
-                    prefixIcon: Icon(Icons.vpn_key),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+              // ✅ Código de verificación con cuadros separados
+              if (_codeSent) ...[
+                const Text(
+                  'Código de verificación',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: List.generate(6, (index) => _buildCodeTextField(index)),
+                ),
+                
+                // ✅ Mensaje para revisar SPAM
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warningBg.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.warning.withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.mark_email_unread, size: 20, color: AppTheme.warning),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          ' ¿No encuentras el correo? Revisa tu carpeta de SPAM o correo no deseado',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.warning,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               
-              SizedBox(height: 24),
+              const SizedBox(height: 24),
               
-              // Mensajes
               if (_errorMessage.isNotEmpty)
                 Container(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade50,
+                    color: AppTheme.errorBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
+                    border: Border.all(color: AppTheme.error),
                   ),
                   child: Text(
                     _errorMessage,
-                    style: TextStyle(color: Colors.red.shade700),
+                    style: TextStyle(color: AppTheme.error),
                     textAlign: TextAlign.center,
                   ),
                 ),
               
               if (_successMessage.isNotEmpty && !_codeSent)
                 Container(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.green.shade50,
+                    color: AppTheme.successBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green.shade200),
+                    border: Border.all(color: AppTheme.success),
                   ),
                   child: Text(
                     _successMessage,
-                    style: TextStyle(color: Colors.green.shade700),
+                    style: TextStyle(color: AppTheme.success),
                     textAlign: TextAlign.center,
                   ),
                 ),
               
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               
-              // Botón principal
               if (_isOnline)
                 SizedBox(
                   width: double.infinity,
@@ -364,50 +425,52 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : (_codeSent ? _confirmarCambio : _solicitarCodigo),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _codeSent ? Colors.green : Colors.blue,
+                      backgroundColor: _codeSent ? AppTheme.green : AppTheme.green,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     child: _isLoading
-                        ? CircularProgressIndicator(color: Colors.white)
+                        ? const CircularProgressIndicator(color: Colors.white)
                         : Text(
                             _codeSent ? 'Confirmar Cambio' : 'Enviar Código',
-                            style: TextStyle(fontSize: 16),
+                            style: const TextStyle(fontSize: 16),
                           ),
                   ),
                 ),
               
               if (!_isOnline)
                 Container(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
+                    color: AppTheme.warningBg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.shade200),
+                    border: Border.all(color: AppTheme.warning),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.wifi_off, color: Colors.orange),
-                      SizedBox(width: 12),
+                      Icon(Icons.wifi_off, color: AppTheme.warning),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           'Sin conexión a internet. Conéctate para cambiar tu correo.',
-                          style: TextStyle(color: Colors.orange.shade800),
+                          style: TextStyle(color: AppTheme.warning),
                         ),
                       ),
                     ],
                   ),
                 ),
               
-              // Botón para reenviar código
               if (_codeSent && !_isLoading)
-                TextButton(
-                  onPressed: _solicitarCodigo,
-                  child: Text(
-                    '¿No recibiste el código? Reenviar',
-                    style: TextStyle(color: Colors.blue),
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: TextButton(
+                    onPressed: _solicitarCodigo,
+                    child: Text(
+                      '¿No recibiste el código? Reenviar',
+                      style: TextStyle(color: AppTheme.green),
+                    ),
                   ),
                 ),
             ],
@@ -417,10 +480,36 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _newEmailController.dispose();
-    _codeController.dispose();
-    super.dispose();
+  Widget _buildCodeTextField(int index) {
+    return SizedBox(
+      width: 48,
+      height: 60,
+      child: TextFormField(
+        controller: _codeControllers[index],
+        focusNode: _codeFocusNodes[index],
+        onChanged: (value) => _onCodeChanged(value, index),
+        keyboardType: TextInputType.number,
+        textAlign: TextAlign.center,
+        maxLength: 1,
+        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+        decoration: InputDecoration(
+          counterText: '',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppTheme.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppTheme.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppTheme.green, width: 2),
+          ),
+          contentPadding: const EdgeInsets.all(12),
+        ),
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      ),
+    );
   }
 }

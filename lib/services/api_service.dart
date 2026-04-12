@@ -5,8 +5,8 @@ import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = "http://192.168.0.5:3000";
-
+  //static const String baseUrl = "http://192.168.0.5:3000";
+  static const String baseUrl = "https://radical-mold-commands-stranger.trycloudflare.com";
   // ==================== TOKEN MANAGEMENT ====================
   
   // Guardar tokens
@@ -1341,6 +1341,41 @@ Future<Map<String, dynamic>> confirmarCambioEmail(
     }
   } catch (e) {
     print('Error en confirmarCambioEmail: $e');
+    return {
+      'success': false,
+      'message': 'Error de conexión: ${e.toString()}',
+    };
+  }
+}
+
+// Obtener estadísticas de últimos 7 días
+Future<Map<String, dynamic>> getEstadisticasUltimos7Dias(String token) async {
+  try {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/transferencias/estadisticas/ultimos-7-dias'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    
+    print('=== getEstadisticasUltimos7Dias ===');
+    print('Status code: ${response.statusCode}');
+    print('Response: ${response.body}');
+    
+    if (response.statusCode == 200) {
+      return {
+        'success': true,
+        'data': jsonDecode(response.body),
+      };
+    } else {
+      return {
+        'success': false,
+        'message': 'Error al obtener estadísticas',
+      };
+    }
+  } catch (e) {
+    print('Error en getEstadisticasUltimos7Dias: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
