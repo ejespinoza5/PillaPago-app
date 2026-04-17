@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/database_service.dart';
 import '../services/connectivity_service.dart';
 import '../offline/sync_manager.dart';
+import '../theme/app_theme.dart';
 import 'dart:io';
 
 class PendingTransfersScreen extends StatefulWidget {
@@ -52,20 +53,10 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
     final result = await _syncManager.syncPendingTransfers(widget.token);
     
     if (result['success']) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message']),
-          backgroundColor: Colors.green,
-        ),
-      );
+      _showSnack(result['message'], isError: false);
       await _loadPendingTransfers();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message']),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showSnack(result['message'], isError: true);
     }
     
     setState(() {
@@ -78,17 +69,21 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Eliminar Transferencia'),
-          content: Text('¿Estás seguro de que deseas eliminar esta transferencia pendiente?'),
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Eliminar Transferencia', style: TextStyle(color: AppTheme.textPrimary)),
+          content: const Text('¿Estás seguro de que deseas eliminar esta transferencia pendiente?', style: TextStyle(color: AppTheme.textSecondary)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancelar'),
+              child: Text('Cancelar', style: TextStyle(color: AppTheme.textSecondary)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: Text('Eliminar'),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+              child: Text('Eliminar', style: TextStyle(color: AppTheme.error)),
             ),
           ],
         );
@@ -98,10 +93,29 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
     if (confirm == true) {
       await _dbService.eliminarTransferenciaPendiente(id);
       await _loadPendingTransfers();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Transferencia eliminada'), backgroundColor: Colors.orange),
-      );
+      _showSnack('Transferencia eliminada', isError: false, isWarning: true);
     }
+  }
+
+  void _showSnack(String msg, {bool isError = false, bool isWarning = false}) {
+    Color bgColor;
+    if (isError) {
+      bgColor = AppTheme.error;
+    } else if (isWarning) {
+      bgColor = AppTheme.warning;
+    } else {
+      bgColor = AppTheme.green;
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(color: Colors.white)),
+        backgroundColor: bgColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   String _formatMonto(dynamic monto) {
@@ -131,23 +145,34 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
     final hasInternet = _connectivityService.isOnline;
 
     return Scaffold(
+      backgroundColor: AppTheme.bgDark,
       appBar: AppBar(
-        title: Text('Transferencias Pendientes'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        title: const Text('Transferencias Pendientes', style: TextStyle(color: AppTheme.textPrimary)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
         actions: [
           if (_pendientes.isNotEmpty)
-            IconButton(
-              icon: Icon(Icons.sync),
-              onPressed: _isSyncing ? null : _syncNow,
-              tooltip: 'Sincronizar ahora',
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.sync, color: AppTheme.textPrimary),
+                onPressed: _isSyncing ? null : _syncNow,
+                tooltip: 'Sincronizar ahora',
+              ),
             ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _loadPendingTransfers,
+        color: AppTheme.green,
         child: _isLoading
-            ? Center(child: CircularProgressIndicator())
+            ? const Center(child: CircularProgressIndicator())
             : _pendientes.isEmpty
                 ? Center(
                     child: Column(
@@ -156,17 +181,17 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
                         Icon(
                           Icons.check_circle_outline,
                           size: 80,
-                          color: Colors.green,
+                          color: AppTheme.green,
                         ),
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
                         Text(
                           'No hay transferencias pendientes',
-                          style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                          style: TextStyle(fontSize: 18, color: AppTheme.textSecondary),
                         ),
-                        SizedBox(height: 8),
+                        const SizedBox(height: 8),
                         Text(
                           'Las transferencias se sincronizarán automáticamente',
-                          style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                          style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
                         ),
                       ],
                     ),
@@ -176,16 +201,16 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
                       if (!hasInternet)
                         Container(
                           width: double.infinity,
-                          padding: EdgeInsets.all(12),
-                          color: Colors.orange.shade100,
+                          padding: const EdgeInsets.all(12),
+                          color: AppTheme.warningBg,
                           child: Row(
                             children: [
-                              Icon(Icons.wifi_off, color: Colors.orange),
-                              SizedBox(width: 8),
+                              Icon(Icons.wifi_off, color: AppTheme.warning),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   'Sin conexión a internet. Las transferencias se sincronizarán cuando vuelva la conexión.',
-                                  style: TextStyle(color: Colors.orange.shade800),
+                                  style: TextStyle(color: AppTheme.warning),
                                 ),
                               ),
                             ],
@@ -193,18 +218,20 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
                         ),
                       Expanded(
                         child: ListView.builder(
-                          padding: EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(16),
                           itemCount: _pendientes.length,
                           itemBuilder: (context, index) {
                             final transferencia = _pendientes[index];
                             return Card(
-                              margin: EdgeInsets.only(bottom: 12),
+                              margin: const EdgeInsets.only(bottom: 12),
                               elevation: 2,
+                              color: AppTheme.surface,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(16),
+                                side: BorderSide(color: AppTheme.border, width: 0.5),
                               ),
                               child: Padding(
-                                padding: EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(12),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -213,59 +240,67 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
                                       children: [
                                         Row(
                                           children: [
-                                            Icon(Icons.pending, color: Colors.orange),
-                                            SizedBox(width: 8),
+                                            Icon(Icons.pending, color: AppTheme.warning),
+                                            const SizedBox(width: 8),
                                             Text(
                                               'Pendiente',
                                               style: TextStyle(
-                                                color: Colors.orange,
+                                                color: AppTheme.warning,
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
                                           ],
                                         ),
-                                        Text(
-                                          'Intento ${transferencia['intentos']}/5',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[600],
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.warningBg,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            'Intento ${transferencia['intentos']}/5',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: AppTheme.warning,
+                                            ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                    SizedBox(height: 8),
+                                    const SizedBox(height: 8),
                                     Text(
                                       'Monto: ${_formatMonto(transferencia['monto'])}',
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
+                                        color: AppTheme.textPrimary,
                                       ),
                                     ),
-                                    SizedBox(height: 4),
+                                    const SizedBox(height: 4),
                                     Text(
                                       'Fecha: ${_formatFecha(transferencia['fecha_transferencia'])}',
-                                      style: TextStyle(color: Colors.grey[600]),
+                                      style: TextStyle(color: AppTheme.textSecondary),
                                     ),
                                     if (transferencia['observaciones'] != null &&
                                         transferencia['observaciones'].toString().isNotEmpty)
                                       Padding(
-                                        padding: EdgeInsets.only(top: 4),
+                                        padding: const EdgeInsets.only(top: 4),
                                         child: Text(
                                           'Obs: ${transferencia['observaciones']}',
-                                          style: TextStyle(color: Colors.grey[600]),
+                                          style: TextStyle(color: AppTheme.textSecondary),
                                         ),
                                       ),
-                                    SizedBox(height: 8),
-                                    Divider(),
+                                    const SizedBox(height: 8),
+                                    Divider(color: AppTheme.border),
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
                                         TextButton.icon(
                                           onPressed: () => _eliminarPendiente(transferencia['id']),
-                                          icon: Icon(Icons.delete_outline, size: 18),
-                                          label: Text('Eliminar'),
+                                          icon: Icon(Icons.delete_outline, size: 18, color: AppTheme.error),
+                                          label: Text('Eliminar', style: TextStyle(color: AppTheme.error)),
                                           style: TextButton.styleFrom(
-                                            foregroundColor: Colors.red,
+                                            foregroundColor: AppTheme.error,
                                           ),
                                         ),
                                       ],
@@ -279,30 +314,33 @@ class _PendingTransfersScreenState extends State<PendingTransfersScreen> {
                       ),
                       if (_pendientes.isNotEmpty && hasInternet && !_isSyncing)
                         Padding(
-                          padding: EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(16),
                           child: SizedBox(
                             width: double.infinity,
                             child: ElevatedButton.icon(
                               onPressed: _syncNow,
-                              icon: Icon(Icons.sync),
+                              icon: const Icon(Icons.sync),
                               label: Text('Sincronizar Ahora (${_pendientes.length} pendientes)'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
+                                backgroundColor: AppTheme.green,
                                 foregroundColor: Colors.white,
-                                padding: EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
                         ),
                       if (_isSyncing)
                         Padding(
-                          padding: EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(16),
                           child: Center(
                             child: Column(
                               children: [
-                                CircularProgressIndicator(),
-                                SizedBox(height: 8),
-                                Text('Sincronizando...'),
+                                CircularProgressIndicator(color: AppTheme.green),
+                                const SizedBox(height: 8),
+                                Text('Sincronizando...', style: TextStyle(color: AppTheme.textSecondary)),
                               ],
                             ),
                           ),

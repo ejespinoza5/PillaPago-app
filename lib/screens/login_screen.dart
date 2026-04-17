@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/api_service.dart';
+import '../services/fcm_service.dart'; // ✅ FCM Service
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import 'role_selection_screen.dart';
@@ -142,6 +143,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       _showSnack(response['message'] ?? 'Inicio de sesión exitoso');
+
+      // ✅ Registrar FCM token después del login exitoso
+      await FCMService.registerTokenAfterLogin(token);
+
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
@@ -226,6 +231,9 @@ class _LoginScreenState extends State<LoginScreen> {
       await prefs.setString("token", response["token"]);
 
       _showSnack(response['message'] ?? 'Bienvenido con Google');
+
+      // ✅ Registrar FCM token después del login con Google exitoso
+      await FCMService.registerTokenAfterLogin(response['token']);
 
       if (rol == 'pendiente' && idNegocio == null) {
         Navigator.pushReplacement(

@@ -61,22 +61,20 @@ class OfflineManager {
 
   // Guardar transferencia pendiente (para cuando no hay internet)
   Future<int> saveTransferenciaPendiente({
-    required int idBanco,
-    required String fechaTransferencia,
-    required double monto,
-    required String observaciones,
-    required String imagenPath,
-    String? imagenBase64,
-  }) async {
-    return await _db.guardarTransferenciaPendiente(
-      idBanco: idBanco,
-      fechaTransferencia: fechaTransferencia,
-      monto: monto,
-      observaciones: observaciones,
-      imagenPath: imagenPath,
-      imagenBase64: imagenBase64,
-    );
-  }
+  required int idBanco,
+  required String fechaTransferencia,
+  required double monto,
+  required String observaciones,
+  required String imagenPath,
+}) async {
+  return await _db.guardarTransferenciaPendiente(
+    idBanco: idBanco,
+    fechaTransferencia: fechaTransferencia,
+    monto: monto,
+    observaciones: observaciones,
+    imagenPath: imagenPath,
+  );
+}
 
   // Limpiar caché viejo
   Future<void> clearOldCache() async {

@@ -6,7 +6,7 @@ import 'dart:io';
 import 'dart:convert';
 import '../services/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import '../theme/app_theme.dart';
 
 class EditTransferenciaScreen extends StatefulWidget {
   final String token;
@@ -36,7 +36,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
   String _bancoSeleccionadoNombre = '';
   late DateTime _fechaSeleccionada;
   File? _imagenSeleccionada;
-  bool _isLoading = true;  // ✅ Cambiar a true inicialmente
+  bool _isLoading = true;
   bool _isLoadingBancos = false;
   String _errorMessage = '';
   bool _disponibleParaEditar = true;
@@ -45,64 +45,47 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
   @override
   void initState() {
     super.initState();
-    _apiService = ApiService();  // ✅ Inicializar primero
+    _apiService = ApiService();
     _inicializar();
   }
 
   Future<void> _inicializar() async {
-    // Obtener token
     _token = widget.token;
     if (_token.isEmpty) {
       final prefs = await SharedPreferences.getInstance();
       _token = prefs.getString('token') ?? '';
     }
     
-    print('=== EDIT TRANSFERENCIA ===');
-    print('Token length: ${_token.length}');
-    print('ID Transferencia: ${widget.transferencia['id_transferencia']}');
-    
     if (_token.isEmpty) {
       _showSnack('Error: Sesión expirada', isError: true);
-      Future.delayed(Duration(seconds: 2), () {
+      Future.delayed(const Duration(seconds: 2), () {
         if (mounted) Navigator.pop(context);
       });
       return;
     }
     
-    // Cargar datos actualizados desde el backend
     await _cargarDatosActualizados();
   }
   
- Future<void> _cargarDatosActualizados() async {
-  setState(() {
-    _isLoading = true;
-  });
-  
-  try {
-    final response = await _apiService.getTransferenciaById(
-      _token,
-      widget.transferencia['id_transferencia'],
-    );
+  Future<void> _cargarDatosActualizados() async {
+    setState(() {
+      _isLoading = true;
+    });
     
-    print('=== RESPUESTA COMPLETA ===');
-    print('Response: $response');
-    print('Response success: ${response['success']}');
-    
-    if (response['success']) {
-      final transferenciaActualizada = response['data'];
-      print('Transferencia actualizada: $transferenciaActualizada');
-      print('disponible_para_editar valor: ${transferenciaActualizada['disponible_para_editar']}');
-      print('disponible_para_editar tipo: ${transferenciaActualizada['disponible_para_editar'].runtimeType}');
+    try {
+      final response = await _apiService.getTransferenciaById(
+        _token,
+        widget.transferencia['id_transferencia'],
+      );
       
-      _disponibleParaEditar = transferenciaActualizada['disponible_para_editar'] == true;
-      
-      print('_disponibleParaEditar asignado: $_disponibleParaEditar');
+      if (response['success']) {
+        final transferenciaActualizada = response['data'];
+        _disponibleParaEditar = transferenciaActualizada['disponible_para_editar'] == true;
         
         if (!_disponibleParaEditar && mounted) {
           _showSnack('No puedes editar esta transferencia. El tiempo para editarla ha expirado.', isError: true);
         }
         
-        // Cargar datos en los controladores
         _montoController.text = transferenciaActualizada['monto']?.toString() ?? '';
         _observacionesController.text = transferenciaActualizada['observaciones'] ?? '';
         _bancoSeleccionadoId = transferenciaActualizada['id_banco'];
@@ -113,7 +96,6 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
           _isLoading = false;
         });
         
-        // Cargar bancos
         await _loadBancos();
       } else {
         _showSnack(response['message'] ?? 'Error al cargar datos', isError: true);
@@ -172,7 +154,11 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Seleccionar Banco'),
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Seleccionar Banco', style: TextStyle(color: AppTheme.textPrimary)),
           content: Container(
             width: double.maxFinite,
             height: 400,
@@ -181,8 +167,8 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
               itemBuilder: (context, index) {
                 final banco = _bancos[index];
                 return ListTile(
-                  leading: Icon(Icons.account_balance, color: Colors.blue),
-                  title: Text(banco['nombre_banco']),
+                  leading: Icon(Icons.account_balance, color: AppTheme.green),
+                  title: Text(banco['nombre_banco'], style: const TextStyle(color: AppTheme.textPrimary)),
                   onTap: () {
                     setState(() {
                       _bancoSeleccionadoId = banco['id_banco'];
@@ -197,7 +183,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cancelar'),
+              child: Text('Cancelar', style: TextStyle(color: AppTheme.textSecondary)),
             ),
           ],
         );
@@ -260,35 +246,33 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
       context: context,
       builder: (BuildContext context) {
         return Dialog(
+          backgroundColor: AppTheme.surface,
           child: Container(
             width: double.maxFinite,
             height: 500,
             child: Column(
               children: [
                 AppBar(
-                  title: Text('Comprobante'),
-                  backgroundColor: Colors.blue,
+                  title: const Text('Comprobante'),
+                  backgroundColor: AppTheme.green,
                   foregroundColor: Colors.white,
                   automaticallyImplyLeading: false,
                   actions: [
-                    IconButton(
-                      icon: Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                   ],
                 ),
                 Expanded(
                   child: CachedNetworkImage(
                     imageUrl: url,
                     fit: BoxFit.contain,
-                    placeholder: (context, url) => Center(child: CircularProgressIndicator()),
+                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
                     errorWidget: (context, url, error) => Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.error_outline, size: 48, color: Colors.red),
-                          SizedBox(height: 16),
-                          Text('No se pudo cargar la imagen'),
+                          Icon(Icons.error_outline, size: 48, color: AppTheme.error),
+                          const SizedBox(height: 16),
+                          const Text('No se pudo cargar la imagen', style: TextStyle(color: AppTheme.textSecondary)),
                         ],
                       ),
                     ),
@@ -306,7 +290,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
     final String? urlComprobante = widget.transferencia['url_comprobante'];
     
     if (urlComprobante == null || urlComprobante.isEmpty) {
-      return SizedBox.shrink();
+      return const SizedBox.shrink();
     }
     
     return Column(
@@ -314,9 +298,9 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
       children: [
         Text(
           'Comprobante actual:',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
         ),
-        SizedBox(height: 8),
+        const SizedBox(height: 8),
         InkWell(
           onTap: () => _mostrarImagenAmpliada(urlComprobante),
           child: Container(
@@ -324,7 +308,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
             width: double.infinity,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
+              border: Border.all(color: AppTheme.border),
               image: DecorationImage(
                 image: CachedNetworkImageProvider(urlComprobante),
                 fit: BoxFit.cover,
@@ -332,7 +316,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
             ),
           ),
         ),
-        SizedBox(height: 16),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -388,7 +372,10 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: isError ? Colors.red : Colors.green,
+        backgroundColor: isError ? AppTheme.error : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -396,87 +383,106 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.bgDark,
       appBar: AppBar(
-        title: Text('Editar Transferencia'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        title: const Text('Editar Transferencia', style: TextStyle(color: AppTheme.textPrimary)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
       ),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : _isLoadingBancos
-              ? Center(child: CircularProgressIndicator())
+              ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
-                  padding: EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
                   child: Form(
                     key: _formKey,
                     child: Column(
                       children: [
                         if (!_disponibleParaEditar)
                           Container(
-                            padding: EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.red.shade50,
+                              color: AppTheme.errorBg,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.red.shade200),
+                              border: Border.all(color: AppTheme.error),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.timer_off, color: Colors.red),
-                                SizedBox(width: 12),
+                                Icon(Icons.timer_off, size: 16, color: AppTheme.error),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     'No puedes editar esta transferencia. El tiempo para editarla ha expirado.',
-                                    style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                                    style: TextStyle(fontSize: 12, color: AppTheme.error),
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         
-                        if (!_disponibleParaEditar) SizedBox(height: 16),
+                        if (!_disponibleParaEditar) const SizedBox(height: 16),
                         
                         // Banco
                         InkWell(
                           onTap: _disponibleParaEditar ? _showBancoDialog : null,
                           child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade400),
-                              borderRadius: BorderRadius.circular(10),
-                              color: _disponibleParaEditar ? Colors.white : Colors.grey.shade50,
+                              color: AppTheme.surface,
+                              border: Border.all(color: AppTheme.border),
+                              borderRadius: BorderRadius.circular(16),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.account_balance, color: _disponibleParaEditar ? Colors.blue : Colors.grey),
-                                SizedBox(width: 12),
+                                Icon(Icons.account_balance, color: _disponibleParaEditar ? AppTheme.green : AppTheme.textDisabled),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Banco *', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                      Text('Banco *', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                                      const SizedBox(height: 4),
                                       Text(
-                                        _bancoSeleccionadoNombre.isEmpty ? 'Selecciona un banco' : _bancoSeleccionadoNombre,
-                                        style: TextStyle(color: _disponibleParaEditar ? Colors.black : Colors.grey),
+                                        _bancoSeleccionadoNombre.isEmpty
+                                            ? 'Selecciona un banco'
+                                            : _bancoSeleccionadoNombre,
+                                        style: TextStyle(
+                                          color: _disponibleParaEditar ? AppTheme.textPrimary : AppTheme.textDisabled,
+                                        ),
                                       ),
                                     ],
                                   ),
                                 ),
-                                if (_disponibleParaEditar) Icon(Icons.arrow_drop_down, color: Colors.grey),
+                                if (_disponibleParaEditar) Icon(Icons.arrow_drop_down, color: AppTheme.textSecondary),
                               ],
                             ),
                           ),
                         ),
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
                         
                         // Monto
                         TextFormField(
                           controller: _montoController,
                           enabled: _disponibleParaEditar,
                           keyboardType: TextInputType.numberWithOptions(decimal: true),
+                          style: const TextStyle(color: AppTheme.textPrimary),
                           decoration: InputDecoration(
                             labelText: 'Monto *',
-                            prefixIcon: Icon(Icons.attach_money),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            prefixIcon: Icon(Icons.attach_money, color: AppTheme.green),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: AppTheme.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: AppTheme.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: AppTheme.green, width: 2),
+                            ),
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) return 'Ingresa el monto';
@@ -485,30 +491,31 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                             return null;
                           },
                         ),
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
                         
                         // Fecha
                         InkWell(
                           onTap: _disponibleParaEditar ? _seleccionarFecha : null,
                           child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade400),
-                              borderRadius: BorderRadius.circular(10),
-                              color: _disponibleParaEditar ? Colors.white : Colors.grey.shade50,
+                              color: AppTheme.surface,
+                              border: Border.all(color: AppTheme.border),
+                              borderRadius: BorderRadius.circular(16),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.calendar_today, color: _disponibleParaEditar ? Colors.blue : Colors.grey),
-                                SizedBox(width: 12),
+                                Icon(Icons.calendar_today, color: _disponibleParaEditar ? AppTheme.green : AppTheme.textDisabled),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Fecha de transferencia *', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                      Text('Fecha de transferencia *', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                                      const SizedBox(height: 4),
                                       Text(
                                         '${_fechaSeleccionada.day}/${_fechaSeleccionada.month}/${_fechaSeleccionada.year}',
-                                        style: TextStyle(color: _disponibleParaEditar ? Colors.black : Colors.grey),
+                                        style: TextStyle(color: _disponibleParaEditar ? AppTheme.textPrimary : AppTheme.textDisabled),
                                       ),
                                     ],
                                   ),
@@ -517,7 +524,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                             ),
                           ),
                         ),
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
                         
                         // Imagen actual
                         _buildImagenActual(),
@@ -525,23 +532,24 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                         // Nueva imagen
                         Container(
                           decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade400),
-                            borderRadius: BorderRadius.circular(10),
+                            color: AppTheme.surface,
+                            border: Border.all(color: AppTheme.border),
+                            borderRadius: BorderRadius.circular(16),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Padding(
-                                padding: EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(12),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.image, color: _disponibleParaEditar ? Colors.blue : Colors.grey),
-                                    SizedBox(width: 8),
+                                    Icon(Icons.image, color: _disponibleParaEditar ? AppTheme.green : AppTheme.textDisabled),
+                                    const SizedBox(width: 8),
                                     Text(
                                       'Nuevo comprobante (opcional)',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w500,
-                                        color: _disponibleParaEditar ? Colors.black : Colors.grey.shade600,
+                                        color: _disponibleParaEditar ? AppTheme.textPrimary : AppTheme.textDisabled,
                                       ),
                                     ),
                                   ],
@@ -550,7 +558,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                               if (_imagenSeleccionada != null) ...[
                                 Container(
                                   height: 200,
-                                  margin: EdgeInsets.all(8),
+                                  margin: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(8),
                                     image: DecorationImage(
@@ -560,42 +568,46 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                                   ),
                                 ),
                                 Padding(
-                                  padding: EdgeInsets.all(8),
+                                  padding: const EdgeInsets.all(8),
                                   child: TextButton.icon(
                                     onPressed: () {
                                       setState(() {
                                         _imagenSeleccionada = null;
                                       });
                                     },
-                                    icon: Icon(Icons.delete, color: Colors.red),
-                                    label: Text('Eliminar imagen', style: TextStyle(color: Colors.red)),
+                                    icon: Icon(Icons.delete, color: AppTheme.error),
+                                    label: Text('Eliminar imagen', style: TextStyle(color: AppTheme.error)),
                                   ),
                                 ),
                               ],
                               if (_imagenSeleccionada == null && _disponibleParaEditar)
                                 Padding(
-                                  padding: EdgeInsets.all(12),
+                                  padding: const EdgeInsets.all(12),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Expanded(
                                         child: OutlinedButton.icon(
                                           onPressed: _seleccionarImagen,
-                                          icon: Icon(Icons.photo_library),
-                                          label: Text('Galería'),
+                                          icon: Icon(Icons.photo_library, color: AppTheme.green),
+                                          label: const Text('Galería'),
                                           style: OutlinedButton.styleFrom(
-                                            padding: EdgeInsets.symmetric(vertical: 12),
+                                            side: BorderSide(color: AppTheme.border),
+                                            foregroundColor: AppTheme.textPrimary,
+                                            padding: const EdgeInsets.symmetric(vertical: 12),
                                           ),
                                         ),
                                       ),
-                                      SizedBox(width: 12),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: OutlinedButton.icon(
                                           onPressed: _tomarFoto,
-                                          icon: Icon(Icons.camera_alt),
-                                          label: Text('Cámara'),
+                                          icon: Icon(Icons.camera_alt, color: AppTheme.green),
+                                          label: const Text('Cámara'),
                                           style: OutlinedButton.styleFrom(
-                                            padding: EdgeInsets.symmetric(vertical: 12),
+                                            side: BorderSide(color: AppTheme.border),
+                                            foregroundColor: AppTheme.textPrimary,
+                                            padding: const EdgeInsets.symmetric(vertical: 12),
                                           ),
                                         ),
                                       ),
@@ -605,22 +617,34 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                             ],
                           ),
                         ),
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
                         
                         // Observaciones
                         TextFormField(
                           controller: _observacionesController,
                           enabled: _disponibleParaEditar,
                           maxLines: 3,
+                          style: const TextStyle(color: AppTheme.textPrimary),
                           decoration: InputDecoration(
                             labelText: 'Observaciones (opcional)',
                             hintText: 'Ej: Transferencia por venta del día',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            prefixIcon: Icon(Icons.description),
+                            prefixIcon: Icon(Icons.description, color: AppTheme.green),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: AppTheme.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: AppTheme.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: AppTheme.green, width: 2),
+                            ),
                             alignLabelWithHint: true,
                           ),
                         ),
-                        SizedBox(height: 24),
+                        const SizedBox(height: 24),
                         
                         // Botón guardar
                         if (_disponibleParaEditar)
@@ -629,29 +653,31 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _guardarCambios,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
+                                backgroundColor: AppTheme.green,
                                 foregroundColor: Colors.white,
-                                padding: EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                               child: _isLoading
-                                  ? CircularProgressIndicator(color: Colors.white)
-                                  : Text('Guardar Cambios', style: TextStyle(fontSize: 16)),
+                                  ? const CircularProgressIndicator(color: Colors.white)
+                                  : const Text('Guardar Cambios', style: TextStyle(fontSize: 16)),
                             ),
                           ),
                         
                         if (_errorMessage.isNotEmpty) ...[
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
                           Container(
-                            padding: EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.red.shade50,
+                              color: AppTheme.errorBg,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.red.shade200),
+                              border: Border.all(color: AppTheme.error),
                             ),
                             child: Text(
                               _errorMessage,
-                              style: TextStyle(color: Colors.red.shade700),
+                              style: TextStyle(color: AppTheme.error),
                               textAlign: TextAlign.center,
                             ),
                           ),

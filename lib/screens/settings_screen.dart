@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/fcm_service.dart'; // ✅ FCM Service
 import '../theme/app_theme.dart';
 import 'manage_employees_screen.dart';
 import 'login_screen.dart';
@@ -143,6 +144,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _isLoading = true;
       });
+
+      // ✅ Desregistrar FCM token antes de cerrar sesión
+      await FCMService.unregisterToken(widget.token);
 
       await ApiService.clearTokens();
       
@@ -347,8 +351,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await Share.share(
       '📱 *PillaPago* - Invitación\n\n'
       'Únete a mi negocio usando este código:\n'
-      '`$codigo`\n\n'
-      'Descarga la app: [link de descarga]',
+      '`$codigo`\n\n',
     );
   }
 

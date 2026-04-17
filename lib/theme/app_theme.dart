@@ -7,6 +7,9 @@ class AppTheme {
   static const Color greenDark = Color(0xFF6EA52A);
   static const Color greenLight = Color(0xFFAEDD5C);
   static const Color greenDisabled = Color(0xFF4A6B1F);
+
+  //Notificaciones
+  static const Color info = Color(0xFF2196F3);
   
   // Fondos
   static const Color bgDark = Color(0xFF0E1510);

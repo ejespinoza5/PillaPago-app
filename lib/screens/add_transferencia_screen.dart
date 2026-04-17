@@ -310,6 +310,30 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
     }
   }
 
+  // ✅ Método para comprimir imagen antes de guardar
+  Future<File> _comprimirImagen(File imagen) async {
+    // Leer bytes
+    final bytes = await imagen.readAsBytes();
+    
+    // Si la imagen es mayor a 500KB, comprimir
+    if (bytes.length > 500 * 1024) {
+      print('🖼️ Imagen grande (${bytes.length} bytes), comprimiendo...');
+      
+      // Usar ImagePicker para comprimir
+      final picker = ImagePicker();
+      final compressedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 50, // Reducir calidad al 50%
+      );
+      
+      if (compressedFile != null) {
+        return File(compressedFile.path);
+      }
+    }
+    
+    return imagen;
+  }
+
   Future<void> _crearTransferencia() async {
     if (_imagenSeleccionada == null) {
       _showSnack('La imagen del comprobante es obligatoria', isError: true);
@@ -351,22 +375,26 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
           });
         }
       } else {
-        List<int> imageBytes = await _imagenSeleccionada!.readAsBytes();
-        String imagenBase64 = base64Encode(imageBytes);
+        // ✅ Sin internet: comprimir imagen y guardar SOLO la ruta (sin base64)
+        final imagenComprimida = await _comprimirImagen(_imagenSeleccionada!);
+        
+        // Guardar la imagen en una ubicación permanente
+        final String imagePath = '${(await _dbService.database).path}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        await imagenComprimida.copy(imagePath);
         
         await OfflineManager().saveTransferenciaPendiente(
           idBanco: _bancoSeleccionadoId!,
           fechaTransferencia: _fechaSeleccionada.toIso8601String().split('T')[0],
           monto: double.parse(_montoController.text),
           observaciones: _observacionesController.text,
-          imagenPath: _imagenSeleccionada!.path,
-          imagenBase64: imagenBase64,
+          imagenPath: imagePath, // ✅ Solo la ruta, no el base64
         );
         
         _showSnack('Transferencia guardada localmente. Se sincronizará cuando haya internet.');
         Navigator.pop(context, true);
       }
     } catch (e) {
+      print('Error en _crearTransferencia: $e');
       setState(() {
         _errorMessage = 'Error de conexión: ${e.toString()}';
         _isLoading = false;

@@ -5,8 +5,8 @@ import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  //static const String baseUrl = "http://192.168.0.5:3000";
-  static const String baseUrl = "https://radical-mold-commands-stranger.trycloudflare.com";
+  static const String baseUrl = "http://192.168.0.4:3000";
+  //static const String baseUrl = "https://radical-mold-commands-stranger.trycloudflare.com";
   // ==================== TOKEN MANAGEMENT ====================
   
   // Guardar tokens

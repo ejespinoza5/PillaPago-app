@@ -7,6 +7,7 @@ import 'dart:async';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/notification_service.dart';
 import '../offline/offline_manager.dart';
 import '../offline/sync_manager.dart';
 import '../theme/app_theme.dart';
@@ -17,6 +18,9 @@ import 'edit_transferencia_screen.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'login_screen.dart';
+import 'notifications_screen.dart';
+import '../services/notification_counter_service.dart';
+import 'package:flutter/foundation.dart';
 
 class HomeScreen extends StatefulWidget {
   final String token;
@@ -37,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _errorMessage = '';
   String _filtroActual = 'hoy';
   DateTime _fechaSeleccionada = DateTime.now();
+  bool _isOfflineMode = false;
 
   late DatabaseService _dbService;
   late ConnectivityService _connectivityService;
@@ -59,6 +64,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _estadisticas = [];
   bool _isLoadingEstadisticas = false;
 
+  // Para el contador de notificaciones
+  int _notificationCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -74,19 +82,36 @@ class _HomeScreenState extends State<HomeScreen> {
     _connectionSubscription = _connectivityService.onConnectionChange.listen((isOnline) async {
       setState(() {
         _isOnline = isOnline;
+        if (isOnline) {
+          _isOfflineMode = false;
+        } else {
+          _isOfflineMode = true;
+        }
       });
+      
       if (isOnline) {
+        // Sincronizar transferencias pendientes
         final result = await _syncManager.syncPendingTransfers(widget.token);
         if (result['sincronizadas'] > 0) {
           _showSnack('✅ ${result['sincronizadas']} transferencias sincronizadas');
           await _updatePendingCount();
           _loadAllData();
         }
+        
+        // Sincronizar acciones pendientes de notificaciones
+        await _syncNotifications();
+        
+        // Recargar contador de notificaciones
+        await _loadNotificationCount();
       }
     });
     
     _loadAllData();
     _startPendingCountUpdater();
+    _loadNotificationCount();
+    
+    // Escuchar cambios en el contador global
+    NotificationCounterService.addListener(_onNotificationCountChanged);
   }
 
   @override
@@ -95,7 +120,56 @@ class _HomeScreenState extends State<HomeScreen> {
     _connectionSubscription?.cancel();
     _pendingTimer?.cancel();
     _pendingCountNotifier.dispose();
+    NotificationCounterService.removeListener(_onNotificationCountChanged);
     super.dispose();
+  }
+
+  // Sincronizar acciones pendientes de notificaciones
+  Future<void> _syncNotifications() async {
+    try {
+      final token = await _getValidToken();
+      if (token.isNotEmpty) {
+        final notificationService = NotificationService(token: token);
+        final sincronizadas = await notificationService.sincronizarAccionesPendientes();
+        if (sincronizadas > 0 && mounted) {
+          _showSnack('✅ $sincronizadas notificaciones sincronizadas');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print("Error sincronizando notificaciones: $e");
+    }
+  }
+
+  // Listener para cambios en el contador
+  void _onNotificationCountChanged(int count) {
+    if (mounted) {
+      setState(() {
+        _notificationCount = count;
+      });
+    }
+  }
+
+  Future<void> _loadNotificationCount() async {
+    final token = await _getValidToken();
+    if (token.isNotEmpty) {
+      try {
+        await NotificationCounterService.loadUnreadCount(token);
+        if (mounted) {
+          setState(() {
+            _notificationCount = NotificationCounterService.unreadCount;
+            _isOfflineMode = false;
+          });
+        }
+      } catch (e) {
+        if (kDebugMode) print("📱 Modo offline - usando contador en caché");
+        if (mounted) {
+          setState(() {
+            _notificationCount = NotificationCounterService.unreadCount;
+            _isOfflineMode = true;
+          });
+        }
+      }
+    }
   }
 
   Future<void> _loadEstadisticas() async {
@@ -1162,6 +1236,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const Text("PillaPago", style: TextStyle(color: AppTheme.textPrimary)),
             const SizedBox(width: 8),
+            // Indicador de conexión
             Container(
               width: 10,
               height: 10,
@@ -1170,12 +1245,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: _isOnline ? AppTheme.green : AppTheme.error,
               ),
             ),
+            // Indicador de modo offline para notificaciones
+            if (_isOfflineMode && !_isOnline) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.warning,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Offline',
+                  style: TextStyle(color: Colors.white, fontSize: 10),
+                ),
+              ),
+            ],
           ],
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         automaticallyImplyLeading: false,
         actions: [
+          // Botón de transferencias pendientes
           ValueListenableBuilder<int>(
             valueListenable: _pendingCountNotifier,
             builder: (context, pendingCount, child) {
@@ -1216,6 +1307,71 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
+          
+          // Botón de NOTIFICACIONES con badge y modo offline
+          Stack(
+            children: [
+              IconButton(
+                icon: Stack(
+                  children: [
+                    const Icon(Icons.notifications_none, color: AppTheme.textPrimary),
+                    // Indicador de modo offline en el icono
+                    if (_isOfflineMode && !_isOnline)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: AppTheme.warning,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppTheme.surface, width: 1),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                onPressed: () async {
+                  final token = await _getValidToken();
+                  if (token.isEmpty) {
+                    _showSnack('Error: No hay sesión activa', isError: true);
+                    return;
+                  }
+                  
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => NotificationsScreen(token: token),
+                    ),
+                  );
+                  
+                  // Recargar contador al volver
+                  await _loadNotificationCount();
+                },
+              ),
+              if (_notificationCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.error,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    child: Text(
+                      _notificationCount > 99 ? '99+' : '$_notificationCount',
+                      style: const TextStyle(color: Colors.white, fontSize: 10),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          
+          // Botón de settings
           IconButton(
             icon: const Icon(Icons.settings, color: AppTheme.textPrimary),
             onPressed: () {
