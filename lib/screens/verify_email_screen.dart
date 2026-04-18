@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import 'role_selection_screen.dart';
 import 'login_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 class VerifyEmailScreen extends StatefulWidget {
   final String email;
@@ -55,7 +56,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         token: widget.token,
       );
 
-      print('Resultado verifyEmail: $result');
+      if (kDebugMode) print('Resultado verifyEmail: $result');
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -91,7 +92,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         }
       }
     } catch (e) {
-      print('Error en _verifyCode: $e');
+      if (kDebugMode) print('Error en _verifyCode: $e');
       setState(() {
         _isLoading = false;
         _errorMessage = 'Error de conexión: ${e.toString()}';
@@ -122,7 +123,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         }
       }
     } catch (e) {
-      print('Error en _resendCode: $e');
+      if (kDebugMode) print('Error en _resendCode: $e');
       setState(() {
         _isResending = false;
         _errorMessage = 'Error de conexión: ${e.toString()}';

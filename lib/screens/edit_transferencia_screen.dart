@@ -7,6 +7,8 @@ import 'dart:convert';
 import '../services/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
+import '../services/ocr_service.dart';
 
 class EditTransferenciaScreen extends StatefulWidget {
   final String token;
@@ -26,6 +28,7 @@ class EditTransferenciaScreen extends StatefulWidget {
 
 class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
   late ApiService _apiService;
+  late OCRService _ocrService;
   
   final _formKey = GlobalKey<FormState>();
   final _montoController = TextEditingController();
@@ -38,6 +41,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
   File? _imagenSeleccionada;
   bool _isLoading = true;
   bool _isLoadingBancos = false;
+  bool _isProcessingOCR = false;
   String _errorMessage = '';
   bool _disponibleParaEditar = true;
   String _token = '';
@@ -46,6 +50,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
   void initState() {
     super.initState();
     _apiService = ApiService();
+    _ocrService = OCRService();
     _inicializar();
   }
 
@@ -89,7 +94,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
         _montoController.text = transferenciaActualizada['monto']?.toString() ?? '';
         _observacionesController.text = transferenciaActualizada['observaciones'] ?? '';
         _bancoSeleccionadoId = transferenciaActualizada['id_banco'];
-        _bancoSeleccionadoNombre = transferenciaActualizada['banco'] ?? '';
+        _bancoSeleccionadoNombre = transferenciaActualizada['nombre_banco'] ?? '';
         _fechaSeleccionada = DateTime.tryParse(transferenciaActualizada['fecha_transferencia'] ?? '') ?? DateTime.now();
         
         setState(() {
@@ -104,7 +109,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
         });
       }
     } catch (e) {
-      print('Error cargando datos actualizados: $e');
+      if (kDebugMode) print('Error cargando datos actualizados: $e');
       setState(() {
         _isLoading = false;
       });
@@ -126,6 +131,18 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
             _bancos = List<Map<String, dynamic>>.from(data);
             _isLoadingBancos = false;
           });
+          
+          if (_bancoSeleccionadoId != null) {
+            final bancoEncontrado = _bancos.firstWhere(
+              (b) => b['id_banco'] == _bancoSeleccionadoId,
+              orElse: () => {},
+            );
+            if (bancoEncontrado.isNotEmpty) {
+              setState(() {
+                _bancoSeleccionadoNombre = bancoEncontrado['nombre_banco'] ?? '';
+              });
+            }
+          }
         } else {
           setState(() {
             _isLoadingBancos = false;
@@ -137,7 +154,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
         });
       }
     } catch (e) {
-      print('Error cargando bancos: $e');
+      if (kDebugMode) print('Error cargando bancos: $e');
       setState(() {
         _isLoadingBancos = false;
       });
@@ -211,6 +228,41 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
     }
   }
 
+  // ✅ Validar imagen con OCR
+  Future<bool> _validarImagenConOCR(File imagen) async {
+    setState(() {
+      _isProcessingOCR = true;
+    });
+    
+    try {
+      final resultado = await _ocrService.validarComprobante(imagen);
+      
+      if (resultado['success']) {
+        if (mounted) {
+          _showSnack('✅ ${resultado['mensaje']}');
+        }
+        return true;
+      } else {
+        if (mounted) {
+          _showSnack(resultado['mensaje'], isError: true);
+        }
+        return false;
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Error al validar la imagen', isError: true);
+      }
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessingOCR = false;
+        });
+      }
+    }
+  }
+
+  // ✅ Modificado con validación OCR
   Future<void> _seleccionarImagen() async {
     if (!_disponibleParaEditar) {
       _showSnack('No puedes editar esta transferencia. El tiempo ha expirado.', isError: true);
@@ -220,12 +272,18 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
-      setState(() {
-        _imagenSeleccionada = File(pickedFile.path);
-      });
+      final imagenTemp = File(pickedFile.path);
+      final esValida = await _validarImagenConOCR(imagenTemp);
+      
+      if (esValida) {
+        setState(() {
+          _imagenSeleccionada = imagenTemp;
+        });
+      }
     }
   }
 
+  // ✅ Modificado con validación OCR
   Future<void> _tomarFoto() async {
     if (!_disponibleParaEditar) {
       _showSnack('No puedes editar esta transferencia. El tiempo ha expirado.', isError: true);
@@ -235,9 +293,14 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.camera);
     if (pickedFile != null) {
-      setState(() {
-        _imagenSeleccionada = File(pickedFile.path);
-      });
+      final imagenTemp = File(pickedFile.path);
+      final esValida = await _validarImagenConOCR(imagenTemp);
+      
+      if (esValida) {
+        setState(() {
+          _imagenSeleccionada = imagenTemp;
+        });
+      }
     }
   }
 
@@ -288,6 +351,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
 
   Widget _buildImagenActual() {
     final String? urlComprobante = widget.transferencia['url_comprobante'];
+    final imagenUrl = ApiService.getImagenUrl(urlComprobante);
     
     if (urlComprobante == null || urlComprobante.isEmpty) {
       return const SizedBox.shrink();
@@ -302,7 +366,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
         ),
         const SizedBox(height: 8),
         InkWell(
-          onTap: () => _mostrarImagenAmpliada(urlComprobante),
+          onTap: () => _mostrarImagenAmpliada(imagenUrl),
           child: Container(
             height: 150,
             width: double.infinity,
@@ -310,7 +374,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: AppTheme.border),
               image: DecorationImage(
-                image: CachedNetworkImageProvider(urlComprobante),
+                image: CachedNetworkImageProvider(imagenUrl),
                 fit: BoxFit.cover,
               ),
             ),
@@ -360,7 +424,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
         });
       }
     } catch (e) {
-      print('Error guardando cambios: $e');
+      if (kDebugMode) print('Error guardando cambios: $e');
       setState(() {
         _errorMessage = 'Error de conexión: ${e.toString()}';
         _isLoading = false;
@@ -529,7 +593,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                         // Imagen actual
                         _buildImagenActual(),
                         
-                        // Nueva imagen
+                        // Nueva imagen con OCR
                         Container(
                           decoration: BoxDecoration(
                             color: AppTheme.surface,
@@ -555,6 +619,29 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                                   ],
                                 ),
                               ),
+                              
+                              // ✅ Indicador de procesamiento OCR
+                              if (_isProcessingOCR)
+                                Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.green),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'Validando imagen...',
+                                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              
                               if (_imagenSeleccionada != null) ...[
                                 Container(
                                   height: 200,
@@ -580,7 +667,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
                                   ),
                                 ),
                               ],
-                              if (_imagenSeleccionada == null && _disponibleParaEditar)
+                              if (_imagenSeleccionada == null && _disponibleParaEditar && !_isProcessingOCR)
                                 Padding(
                                   padding: const EdgeInsets.all(12),
                                   child: Row(
@@ -693,6 +780,7 @@ class _EditTransferenciaScreenState extends State<EditTransferenciaScreen> {
   void dispose() {
     _montoController.dispose();
     _observacionesController.dispose();
+    _ocrService.dispose();
     super.dispose();
   }
 }

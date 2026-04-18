@@ -7,7 +7,9 @@ import '../services/api_service.dart';
 import '../services/connectivity_service.dart';
 import '../offline/offline_manager.dart';
 import '../services/database_service.dart';
+import '../services/ocr_service.dart';  // �S& Agregar import
 import '../theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
 
 class AddTransferenciaScreen extends StatefulWidget {
   final String token;
@@ -22,6 +24,7 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
   late ApiService _apiService;
   late ConnectivityService _connectivityService;
   late DatabaseService _dbService;
+  late OCRService _ocrService;  // �S& Servicio OCR
   
   final _formKey = GlobalKey<FormState>();
   final _montoController = TextEditingController();
@@ -36,16 +39,19 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
   File? _imagenSeleccionada;
   bool _isLoading = false;
   bool _isLoadingBancos = true;
+  bool _isProcessingOCR = false;  // �S& Para mostrar loading del OCR
   String _errorMessage = '';
 
   @override
-  void initState() {
-    super.initState();
-    _apiService = ApiService();
-    _connectivityService = ConnectivityService();
-    _dbService = DatabaseService();
-    _loadBancos();
-  }
+void initState() {
+  super.initState();
+  _apiService = ApiService();
+  _connectivityService = ConnectivityService();
+  _dbService = DatabaseService();
+  _ocrService = OCRService();  // �S& Sin errores
+  _loadBancos();
+}
+
 
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -57,6 +63,179 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
         margin: const EdgeInsets.all(16),
       ),
     );
+  }
+
+  // �S& Procesar imagen con OCR
+  Future<void> _procesarImagenOCR(File imagen) async {
+  setState(() {
+    _isProcessingOCR = true;
+  });
+  
+  try {
+    final resultado = await _ocrService.validarComprobante(imagen);
+    
+    if (resultado['success']) {
+      // �S& Comprobante válido
+      if (kDebugMode) print('�S& ${resultado['mensaje']}');
+      _showSnack('�S& Comprobante válido');
+    } else {
+      // �R Comprobante inválido - rechazar imagen
+      setState(() {
+        _imagenSeleccionada = null;
+      });
+      _showSnack(resultado['mensaje'], isError: true);
+    }
+  } catch (e) {
+    setState(() {
+      _imagenSeleccionada = null;
+    });
+    _showSnack('Error al procesar la imagen', isError: true);
+  } finally {
+    setState(() {
+      _isProcessingOCR = false;
+    });
+  }
+}
+  
+  // �S& Mostrar diálogo con información detectada
+  void _mostrarDialogoOCR(Map<String, dynamic> resultado) {
+    final items = <Widget>[];
+    
+    if (resultado['monto'] != null) {
+      items.add(_buildInfoRow('�x� Monto:', '\$${resultado['monto']}'));
+    }
+    if (resultado['fecha'] != null) {
+      items.add(_buildInfoRow('�x& Fecha:', resultado['fecha']));
+    }
+    if (resultado['banco'] != null) {
+      items.add(_buildInfoRow('�x�� Banco:', resultado['banco']));
+    }
+    
+    if (items.isEmpty) {
+      _showSnack('No se detectó información relevante en la imagen', isError: false);
+      return;
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text('Información detectada', style: TextStyle(color: AppTheme.textPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ...items,
+            const SizedBox(height: 12),
+            const Divider(color: AppTheme.border),
+            const SizedBox(height: 8),
+            const Text(
+              '¿Deseas usar esta información para auto-completar el formulario?',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Ignorar', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Auto-llenar los campos
+              setState(() {
+                if (resultado['monto'] != null) {
+                  _montoController.text = resultado['monto'].toString();
+                }
+                if (resultado['fecha'] != null) {
+                  _autoCompletarFecha(resultado['fecha']);
+                }
+                if (resultado['banco'] != null) {
+                  _autoSeleccionarBanco(resultado['banco']);
+                }
+              });
+              Navigator.pop(context);
+              _showSnack('�S& Información auto-completada');
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Aplicar'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+          const SizedBox(width: 8),
+          Text(value, style: const TextStyle(color: AppTheme.green)),
+        ],
+      ),
+    );
+  }
+  
+  // �S& Auto-completar fecha desde OCR
+  void _autoCompletarFecha(String fechaStr) {
+    // Formatos posibles: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD
+    DateTime? fecha;
+    
+    // Formato DD/MM/YYYY
+    if (fechaStr.contains('/')) {
+      final partes = fechaStr.split('/');
+      if (partes.length == 3) {
+        fecha = DateTime.tryParse('${partes[2]}-${partes[1]}-${partes[0]}');
+      }
+    }
+    // Formato DD-MM-YYYY
+    else if (fechaStr.contains('-')) {
+      final partes = fechaStr.split('-');
+      if (partes.length == 3) {
+        // Si el año es el primero (YYYY-MM-DD)
+        if (partes[0].length == 4) {
+          fecha = DateTime.tryParse(fechaStr);
+        } 
+        // Si el día es el primero (DD-MM-YYYY)
+        else {
+          fecha = DateTime.tryParse('${partes[2]}-${partes[1]}-${partes[0]}');
+        }
+      }
+    }
+    
+    if (fecha != null && fecha.isBefore(DateTime.now())) {
+      _fechaSeleccionada = fecha;
+    }
+  }
+  
+  // �S& Auto-seleccionar banco detectado por OCR
+  void _autoSeleccionarBanco(String nombreBanco) async {
+    // Esperar a que los bancos estén cargados
+    if (_bancos.isEmpty) {
+      await _loadBancos();
+    }
+    
+    final nombreLower = nombreBanco.toLowerCase();
+    final bancoEncontrado = _bancos.firstWhere(
+      (b) => b['nombre_banco'].toString().toLowerCase().contains(nombreLower),
+      orElse: () => {},
+    );
+    
+    if (bancoEncontrado.isNotEmpty) {
+      setState(() {
+        _bancoSeleccionadoId = bancoEncontrado['id_banco'];
+        _bancoSeleccionadoNombre = bancoEncontrado['nombre_banco'];
+      });
+      _showSnack('�S& Banco detectado: ${bancoEncontrado['nombre_banco']}');
+    }
   }
 
   Future<void> _loadBancos() async {
@@ -71,7 +250,7 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
       try {
         final response = await _apiService.getBancos(widget.token);
         
-        print('Respuesta de bancos: $response');
+        if (kDebugMode) print('Respuesta de bancos: $response');
         
         if (mounted && response['success']) {
           final data = response['data'];
@@ -84,7 +263,7 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
             });
             
             await _guardarBancosEnCache(_bancos);
-            print('Bancos cargados: ${_bancos.length}');
+            if (kDebugMode) print('Bancos cargados: ${_bancos.length}');
           } else {
             setState(() {
               _errorMessage = 'Formato de datos incorrecto';
@@ -98,7 +277,7 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
           });
         }
       } catch (e) {
-        print('Error cargando bancos: $e');
+        if (kDebugMode) print('Error cargando bancos: $e');
         await _cargarBancosDesdeCache();
       }
     } else {
@@ -115,7 +294,7 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
         'nombre_banco': banco['nombre_banco'],
       });
     }
-    print('✅ Bancos guardados en caché: ${bancos.length}');
+    if (kDebugMode) print('�S& Bancos guardados en caché: ${bancos.length}');
   }
   
   Future<void> _cargarBancosDesdeCache() async {
@@ -129,7 +308,7 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
           _bancosFiltrados = List<Map<String, dynamic>>.from(result);
           _isLoadingBancos = false;
         });
-        print('📀 Bancos cargados desde caché: ${_bancos.length}');
+        if (kDebugMode) print('�x� Bancos cargados desde caché: ${_bancos.length}');
         
         if (!await _connectivityService.hasInternet()) {
           _showSnack('Modo offline - Mostrando bancos guardados');
@@ -141,7 +320,7 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
         });
       }
     } catch (e) {
-      print('Error cargando bancos desde caché: $e');
+      if (kDebugMode) print('Error cargando bancos desde caché: $e');
       setState(() {
         _errorMessage = 'Error al cargar bancos';
         _isLoadingBancos = false;
@@ -288,6 +467,7 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
     }
   }
 
+  // �S& Modificado para procesar OCR después de seleccionar imagen
   Future<void> _seleccionarImagen() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
@@ -296,9 +476,12 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
       setState(() {
         _imagenSeleccionada = File(pickedFile.path);
       });
+      // �S& Procesar OCR automáticamente
+      await _procesarImagenOCR(_imagenSeleccionada!);
     }
   }
 
+  // �S& Modificado para procesar OCR después de tomar foto
   Future<void> _tomarFoto() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.camera);
@@ -307,23 +490,21 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
       setState(() {
         _imagenSeleccionada = File(pickedFile.path);
       });
+      // �S& Procesar OCR automáticamente
+      await _procesarImagenOCR(_imagenSeleccionada!);
     }
   }
 
-  // ✅ Método para comprimir imagen antes de guardar
   Future<File> _comprimirImagen(File imagen) async {
-    // Leer bytes
     final bytes = await imagen.readAsBytes();
     
-    // Si la imagen es mayor a 500KB, comprimir
     if (bytes.length > 500 * 1024) {
-      print('🖼️ Imagen grande (${bytes.length} bytes), comprimiendo...');
+      if (kDebugMode) print('�x�️ Imagen grande (${bytes.length} bytes), comprimiendo...');
       
-      // Usar ImagePicker para comprimir
       final picker = ImagePicker();
       final compressedFile = await picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 50, // Reducir calidad al 50%
+        imageQuality: 50,
       );
       
       if (compressedFile != null) {
@@ -375,10 +556,8 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
           });
         }
       } else {
-        // ✅ Sin internet: comprimir imagen y guardar SOLO la ruta (sin base64)
         final imagenComprimida = await _comprimirImagen(_imagenSeleccionada!);
         
-        // Guardar la imagen en una ubicación permanente
         final String imagePath = '${(await _dbService.database).path}_${DateTime.now().millisecondsSinceEpoch}.jpg';
         await imagenComprimida.copy(imagePath);
         
@@ -387,14 +566,14 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
           fechaTransferencia: _fechaSeleccionada.toIso8601String().split('T')[0],
           monto: double.parse(_montoController.text),
           observaciones: _observacionesController.text,
-          imagenPath: imagePath, // ✅ Solo la ruta, no el base64
+          imagenPath: imagePath,
         );
         
         _showSnack('Transferencia guardada localmente. Se sincronizará cuando haya internet.');
         Navigator.pop(context, true);
       }
     } catch (e) {
-      print('Error en _crearTransferencia: $e');
+      if (kDebugMode) print('Error en _crearTransferencia: $e');
       setState(() {
         _errorMessage = 'Error de conexión: ${e.toString()}';
         _isLoading = false;
@@ -441,6 +620,33 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // �S& Indicador de OCR procesando
+                        if (_isProcessingOCR)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppTheme.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Procesando imagen con IA... Detectando información...',
+                                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        
                         // Banco
                         InkWell(
                           onTap: _showBancoDialog,
@@ -741,9 +947,10 @@ class _AddTransferenciaScreenState extends State<AddTransferenciaScreen> {
 
   @override
   void dispose() {
-    _montoController.dispose();
-    _observacionesController.dispose();
-    _bancoSearchController.dispose();
-    super.dispose();
-  }
+  _montoController.dispose();
+  _observacionesController.dispose();
+  _bancoSearchController.dispose();
+  _ocrService.dispose();  // �S& Limpiar recurso
+  super.dispose();
+}
 }

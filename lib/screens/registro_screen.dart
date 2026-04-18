@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import 'verify_email_screen.dart';
 import 'role_selection_screen.dart';
 import 'home_screen.dart';
+import 'package:flutter/foundation.dart';
 
 class RegistroScreen extends StatefulWidget {
   const RegistroScreen({super.key});
@@ -152,7 +153,7 @@ class _RegistroScreenState extends State<RegistroScreen>
         imagen,
       );
 
-      print('Respuesta completa del registro: $response');
+      if (kDebugMode) print('Respuesta completa del registro: $response');
 
       if (response['usuario'] != null && response['usuario']['email_verificado'] == false) {
         _showSnack('Te hemos enviado un código de verificación a tu correo electrónico.');
@@ -204,7 +205,7 @@ class _RegistroScreenState extends State<RegistroScreen>
       _showSnack(response['message'] ?? 'Error al registrar', isError: true);
       
     } catch (e) {
-      print('Error en registro: $e');
+      if (kDebugMode) print('Error en registro: $e');
       _showSnack('Ocurrió un error al registrar: ${e.toString()}', isError: true);
     } finally {
       if (mounted) {
@@ -253,7 +254,7 @@ class _RegistroScreenState extends State<RegistroScreen>
 
       final response = await ApiService.loginGoogle(auth.idToken!);
 
-      print('Respuesta Google login: $response');
+      if (kDebugMode) print('Respuesta Google login: $response');
 
       if (response['status'] == 409 || response['statusCode'] == 409) {
         await _googleSignIn.disconnect();
@@ -294,7 +295,7 @@ class _RegistroScreenState extends State<RegistroScreen>
       }
 
     } catch (e) {
-      print(e);
+      if (kDebugMode) print(e);
       _showSnack('Error al iniciar sesión con Google.', isError: true);
     } finally {
       if (mounted) {
@@ -408,7 +409,7 @@ class _RegistroScreenState extends State<RegistroScreen>
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Únete a PillaPago hoy',
+                      '�anete a PillaPago hoy',
                       style: AppTheme.body2,
                     ),
 

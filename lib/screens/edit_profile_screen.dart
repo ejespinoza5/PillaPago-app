@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../services/connectivity_service.dart';
 import '../theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final String token;
@@ -149,7 +150,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         await _dbService.guardarUsuario(usuarioCache);
       }
     } catch (e) {
-      print('Error actualizando caché: $e');
+      if (kDebugMode) print('Error actualizando caché: $e');
     }
   }
 

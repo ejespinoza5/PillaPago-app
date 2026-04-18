@@ -32,11 +32,15 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print("📱 Notificación en background: ${message.messageId}");
+  print('📱 [BG] Notificación recibida en background');
 }
 
-// ✅ Función para mostrar notificación local CON SONIDO PERSONALIZADO
-Future<void> _showLocalNotificationWithSound(RemoteMessage message) async {
+// Mostrar notificación LOCAL cuando la app está en primer plano
+Future<void> _showForegroundNotification(RemoteMessage message) async {
+  print('🔔 [FOREGROUND] Mostrando notificación local');
+  print('🔔 Título: ${message.notification?.title}');
+  print('🔔 Cuerpo: ${message.notification?.body}');
+  
   const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
     'high_importance_channel',
     'Notificaciones Importantes',
@@ -45,7 +49,7 @@ Future<void> _showLocalNotificationWithSound(RemoteMessage message) async {
     priority: Priority.high,
     playSound: true,
     enableVibration: true,
-    icon: '@mipmap/ic_launcher',
+    icon: '@drawable/ic_notification',
     color: Color.fromARGB(255, 0, 200, 83),
   );
   
@@ -70,6 +74,39 @@ Future<void> _showLocalNotificationWithSound(RemoteMessage message) async {
     details,
     payload: jsonEncode(message.data),
   );
+}
+
+// Mostrar SnackBar cuando la app está abierta (más visible)
+void _showForegroundSnackBar(RemoteMessage message) {
+  final context = MyApp.navigatorKey.currentContext;
+  if (context != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message.notification?.title ?? 'Nueva notificación',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            if (message.notification?.body != null)
+              Text(message.notification!.body!),
+          ],
+        ),
+        backgroundColor: AppTheme.green,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Ver',
+          textColor: Colors.white,
+          onPressed: () {
+            _handleNotificationNavigation(message);
+          },
+        ),
+      ),
+    );
+  }
 }
 
 void main() async {
@@ -101,7 +138,7 @@ Future<void> _initializeFirebase() async {
         authDomain: "pillapago.firebaseapp.com",
       ),
     );
-    print('✅ Firebase inicializado correctamente');
+    print('✅ Firebase inicializado');
     await _setupFirebaseMessaging();
   } catch (e) {
     print('❌ Error inicializando Firebase: $e');
@@ -109,6 +146,13 @@ Future<void> _initializeFirebase() async {
 }
 
 Future<void> _initializeLocalNotifications() async {
+  const AndroidNotificationChannel highImportanceChannel = AndroidNotificationChannel(
+    'high_importance_channel',
+    'Notificaciones Importantes',
+    description: 'Canal para notificaciones importantes de PillaPago',
+    importance: Importance.high,
+  );
+
   const AndroidInitializationSettings androidSettings =
       AndroidInitializationSettings('@mipmap/ic_launcher');
   
@@ -128,10 +172,17 @@ Future<void> _initializeLocalNotifications() async {
     settings,
     onDidReceiveNotificationResponse: _onNotificationTapResponse,
   );
+
+  final androidPlugin = flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+
+  await androidPlugin?.createNotificationChannel(highImportanceChannel);
+  print('✅ Canal de notificaciones creado');
 }
 
 Future<void> _setupFirebaseMessaging() async {
-  NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
+  final settings = await FirebaseMessaging.instance.requestPermission(
     alert: true,
     badge: true,
     sound: true,
@@ -142,17 +193,32 @@ Future<void> _setupFirebaseMessaging() async {
   
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   
-  String? token = await FirebaseMessaging.instance.getToken();
+  final token = await FirebaseMessaging.instance.getToken();
   print('📱 FCM Token: $token');
   
+  if (token != null && token.isNotEmpty) {
+    await _updateDeviceToken(token);
+  }
+  
   FirebaseMessaging.instance.onTokenRefresh.listen((String newToken) async {
-    print('📱 Token FCM refrescado: $newToken');
+    print('📱 Token refrescado: $newToken');
     await _updateDeviceToken(newToken);
   });
   
+  // ✅ Notificaciones cuando la app está en primer plano
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    print('📱 Notificación en foreground: ${message.notification?.title}');
-    _showLocalNotificationWithSound(message);
+    print('🔔🔔🔔 NOTIFICACIÓN RECIBIDA CON APP ABIERTA 🔔🔔🔔');
+    print('📱 Título: ${message.notification?.title}');
+    print('📱 Cuerpo: ${message.notification?.body}');
+    print('📱 Data: ${message.data}');
+    
+    // Mostrar notificación local
+    _showForegroundNotification(message);
+    
+    // Mostrar SnackBar
+    _showForegroundSnackBar(message);
+    
+    // Actualizar contador
     _updateNotificationCount(message);
   });
   
@@ -161,7 +227,7 @@ Future<void> _setupFirebaseMessaging() async {
     _handleNotificationNavigation(message);
   });
   
-  RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+  final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
   if (initialMessage != null) {
     print('📱 App abierta desde notificación (cerrada)');
     Future.delayed(const Duration(seconds: 1), () {
@@ -199,11 +265,13 @@ Future<void> _updateDeviceToken(String fcmToken) async {
     if (userToken != null && userToken.isNotEmpty) {
       final notificationService = NotificationService(token: userToken);
       await notificationService.registrarDeviceToken(fcmToken, 'android');
-      print('✅ Device token actualizado en backend');
       await prefs.setString('fcm_token', fcmToken);
+      print('✅ Token registrado en backend');
+    } else {
+      print('⚠️ No hay sesión iniciada, token no registrado');
     }
   } catch (e) {
-    print('❌ Error actualizando device token: $e');
+    print('❌ Error registrando token: $e');
   }
 }
 
@@ -233,7 +301,7 @@ void _navigateToNotifications(Map<String, dynamic> data) {
 class MyApp extends StatelessWidget {
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  MyApp({super.key});
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -322,18 +390,18 @@ class MyApp extends StatelessWidget {
       initialRoute: "/",
       routes: {
         "/": (context) => SplashScreen(),
-        "/login": (context) => LoginScreen(),
-        "/registro": (context) => RegistroScreen(),
+        "/login": (context) => const LoginScreen(),
+        "/registro": (context) => const RegistroScreen(),
         "/recuperar-contraseña": (context) => ForgotPasswordScreen(),
       },
       onGenerateRoute: (settings) {
         switch (settings.name) {
           case '/':
-            return MaterialPageRoute(builder: (_) => SplashScreen());
+            return MaterialPageRoute(builder: (_) => const SplashScreen());
           case '/login':
-            return MaterialPageRoute(builder: (_) => LoginScreen());
+            return MaterialPageRoute(builder: (_) => const LoginScreen());
           case '/registro':
-            return MaterialPageRoute(builder: (_) => RegistroScreen());
+            return MaterialPageRoute(builder: (_) => const RegistroScreen());
           case '/recuperar-contraseña':
             return MaterialPageRoute(builder: (_) => ForgotPasswordScreen());
           case '/role-selection':
@@ -382,7 +450,7 @@ class MyApp extends StatelessWidget {
           case '/qr-scanner':
             return MaterialPageRoute(builder: (_) => const QrScannerScreen());
           default:
-            return MaterialPageRoute(builder: (_) => SplashScreen());
+            return MaterialPageRoute(builder: (_) => const SplashScreen());
         }
       },
     );

@@ -9,7 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../services/connectivity_service.dart';
-import '../services/fcm_service.dart'; // ✅ FCM Service
+import '../services/fcm_service.dart'; // �S& FCM Service
 import '../theme/app_theme.dart';
 import 'manage_employees_screen.dart';
 import 'login_screen.dart';
@@ -17,6 +17,7 @@ import 'edit_profile_screen.dart';
 import 'role_selection_screen.dart';
 import 'change_password_screen.dart';
 import 'change_email_screen.dart';
+import 'package:flutter/foundation.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String token;
@@ -76,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           });
         }
       } catch (e) {
-        print('Error cargando usuario: $e');
+        if (kDebugMode) print('Error cargando usuario: $e');
         await _loadUserFromCache();
       }
     } else {
@@ -145,7 +146,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _isLoading = true;
       });
 
-      // ✅ Desregistrar FCM token antes de cerrar sesión
+      // �S& Desregistrar FCM token antes de cerrar sesión
       await FCMService.unregisterToken(widget.token);
 
       await ApiService.clearTokens();
@@ -283,7 +284,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
     } catch (e) {
-      print('Error en _salirDelNegocio: $e');
+      if (kDebugMode) print('Error en _salirDelNegocio: $e');
       _showSnack('Error de conexión: ${e.toString()}', isError: true);
       setState(() {
         _isLoading = false;
@@ -349,8 +350,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _compartirCodigo(String codigo) async {
     await Share.share(
-      '📱 *PillaPago* - Invitación\n\n'
-      'Únete a mi negocio usando este código:\n'
+      '�x� *PillaPago* - Invitación\n\n'
+      '�anete a mi negocio usando este código:\n'
       '`$codigo`\n\n',
     );
   }
@@ -381,7 +382,7 @@ void _showInvitationCodeDialog() {
               ),
               const SizedBox(height: 16),
 
-              // ✅ Contenedor del QR con logo superpuesto en Stack
+              // �S& Contenedor del QR con logo superpuesto en Stack
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -395,7 +396,7 @@ void _showInvitationCodeDialog() {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // 1️⃣ QR sin logo embebido pero con alta corrección de errores
+                      // 1️⒣ QR sin logo embebido pero con alta corrección de errores
                       QrImageView(
                         data: codigoNegocio,
                         version: QrVersions.auto,
@@ -412,7 +413,7 @@ void _showInvitationCodeDialog() {
                         ),
                       ),
 
-                      // 2️⃣ Fondo blanco circular que "borra" el centro del QR
+                      // 2️⒣ Fondo blanco circular que "borra" el centro del QR
                       Container(
                         width: 56,
                         height: 56,
@@ -422,7 +423,7 @@ void _showInvitationCodeDialog() {
                         ),
                       ),
 
-                      // 3️⃣ Logo encima del hueco blanco
+                      // 3️⒣ Logo encima del hueco blanco
                       ClipOval(
                         child: Image.asset(
                           'assets/images/solo logo.png',
@@ -531,7 +532,7 @@ void _showInvitationCodeDialog() {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '✓ Registro de transferencias\n✓ Almacenamiento offline\n✓ Sincronización automática\n✓ Historial de transacciones',
+                  '�S Registro de transferencias\n�S Almacenamiento offline\n�S Sincronización automática\n�S Historial de transacciones',
                   style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
                 const SizedBox(height: 16),
@@ -753,6 +754,9 @@ void _showInvitationCodeDialog() {
                                   },
                                 ),
                               ),
+
+                            if (_userData['google_id'] == null)
+                              const SizedBox(height: 12),
                             
                             // Cambiar Correo
                             if (_userData['google_id'] == null)

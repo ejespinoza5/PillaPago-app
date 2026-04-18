@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 import 'qr_scanner_screen.dart';
+import 'package:flutter/foundation.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
   final String token;
@@ -97,7 +98,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('✅ Código escaneado correctamente'),
+          content: const Text('�S& Código escaneado correctamente'),
           backgroundColor: AppTheme.green,
           duration: const Duration(seconds: 1),
           behavior: SnackBarBehavior.floating,
@@ -109,22 +110,22 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   }
 
   Future<void> _confirmar() async {
-    print('=== INICIO _confirmar ===');
+    if (kDebugMode) print('=== INICIO _confirmar ===');
     
     if (_rolSeleccionado == null) {
-      print('Error: Rol no seleccionado');
+      if (kDebugMode) print('Error: Rol no seleccionado');
       setState(() => _errorMessage = 'Selecciona un rol para continuar');
       return;
     }
 
     if (_rolSeleccionado == 'dueno' && _negocioController.text.trim().isEmpty) {
-      print('Error: Nombre de negocio vacío');
+      if (kDebugMode) print('Error: Nombre de negocio vacío');
       setState(() => _errorMessage = 'Ingresa el nombre del negocio');
       return;
     }
 
     if (_rolSeleccionado == 'empleado' && _codigoController.text.trim().isEmpty) {
-      print('Error: Código de invitación vacío');
+      if (kDebugMode) print('Error: Código de invitación vacío');
       setState(() => _errorMessage = 'Ingresa el código de invitación');
       return;
     }
@@ -144,27 +145,27 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         return;
       }
 
-      print('Llamando a API con rol: $_rolSeleccionado');
+      if (kDebugMode) print('Llamando a API con rol: $_rolSeleccionado');
       Map<String, dynamic> result;
 
       if (_rolSeleccionado == 'dueno') {
-        print('Registrando negocio: ${_negocioController.text.trim()}');
+        if (kDebugMode) print('Registrando negocio: ${_negocioController.text.trim()}');
         result = await _apiService.registerNegocio(
           _negocioController.text.trim(),
           token,
         );
       } else {
-        print('Uniendo a negocio con código: ${_codigoController.text.trim()}');
+        if (kDebugMode) print('Uniendo a negocio con código: ${_codigoController.text.trim()}');
         result = await _apiService.joinNegocio(
           _codigoController.text.trim(),
           token,
         );
       }
 
-      print('Respuesta de API: $result');
+      if (kDebugMode) print('Respuesta de API: $result');
 
       if (!mounted) {
-        print('Widget no mounted, cancelando');
+        if (kDebugMode) print('Widget no mounted, cancelando');
         return;
       }
 
@@ -200,7 +201,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         setState(() => _errorMessage = result['message'] ?? 'Ocurrió un error al procesar la solicitud');
       }
     } catch (e) {
-      print('Excepción capturada: $e');
+      if (kDebugMode) print('Excepción capturada: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -368,7 +369,7 @@ Widget build(BuildContext context) {
                       ),
                     ],
 
-                    // ✅ Espacio flexible que empuja el contenido hacia arriba
+                    // �S& Espacio flexible que empuja el contenido hacia arriba
                     const SizedBox(height: 20),
                     
                     // Mensaje de error (si existe)

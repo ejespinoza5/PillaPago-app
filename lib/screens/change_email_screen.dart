@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
 
 class ChangeEmailScreen extends StatefulWidget {
   final String token;
@@ -29,7 +30,7 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
   final _formKey = GlobalKey<FormState>();
   final _newEmailController = TextEditingController();
   
-  // ✅ Código con cuadros separados
+  // �S& Código con cuadros separados
   final List<TextEditingController> _codeControllers = List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _codeFocusNodes = List.generate(6, (_) => FocusNode());
   
@@ -190,7 +191,7 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
         await _dbService.guardarUsuario(usuarioCache);
       }
     } catch (e) {
-      print('Error actualizando email en caché: $e');
+      if (kDebugMode) print('Error actualizando email en caché: $e');
     }
   }
 
@@ -339,7 +340,7 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
                   },
                 ),
               
-              // ✅ Código de verificación con cuadros separados
+              // �S& Código de verificación con cuadros separados
               if (_codeSent) ...[
                 const Text(
                   'Código de verificación',
@@ -355,7 +356,7 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
                   children: List.generate(6, (index) => _buildCodeTextField(index)),
                 ),
                 
-                // ✅ Mensaje para revisar SPAM
+                // �S& Mensaje para revisar SPAM
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

@@ -1,6 +1,7 @@
 // lib/offline/offline_manager.dart
 import '../services/database_service.dart';
 import '../services/api_service.dart';
+import 'package:flutter/foundation.dart';
 
 class OfflineManager {
   static final OfflineManager _instance = OfflineManager._internal();
@@ -34,9 +35,9 @@ class OfflineManager {
         await _db.guardarTransferencias(transferencias);
       }
       
-      print('💾 Datos guardados en caché local');
+      if (kDebugMode) print('�x� Datos guardados en caché local');
     } catch (e) {
-      print('❌ Error guardando datos en caché: $e');
+      if (kDebugMode) print('�R Error guardando datos en caché: $e');
     }
   }
 
@@ -51,7 +52,7 @@ class OfflineManager {
         'transferencias': transferencias,
       };
     } catch (e) {
-      print('❌ Error cargando datos desde caché: $e');
+      if (kDebugMode) print('�R Error cargando datos desde caché: $e');
       return {
         'usuario': null,
         'transferencias': [],

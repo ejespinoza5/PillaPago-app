@@ -2,13 +2,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/api_service.dart';
-import '../services/fcm_service.dart'; // ✅ FCM Service
+import '../services/fcm_service.dart'; // �S& FCM Service
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import 'role_selection_screen.dart';
 import 'resend_verification_screen.dart';
 import 'home_screen.dart';
 import 'verify_email_screen.dart';
+import 'package:flutter/foundation.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -46,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return rol == 'pendiente';
   }
 
-  // 🔹 Login con email y password
+  // Login con email y password
   Future<void> login() async {
     final email = emailController.text.trim();
     final password = passwordController.text;
@@ -64,7 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
         "password": password,
       });
 
-      print('Respuesta login: $response');
+      if (kDebugMode) print('Respuesta login: $response');
 
       if (response['message'] != null && response['success'] == false) {
         _showSnack(response['message'], isError: true);
@@ -103,10 +104,10 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      print('Usuario rol: ${usuario['rol']}');
-      print('ID Negocio: ${usuario['id_negocio']}');
-      print('Email verificado: $emailVerificado');
-      print('Necesita onboarding: $necesitaOnboarding');
+      if (kDebugMode) print('Usuario rol: ${usuario['rol']}');
+      if (kDebugMode) print('ID Negocio: ${usuario['id_negocio']}');
+      if (kDebugMode) print('Email verificado: $emailVerificado');
+      if (kDebugMode) print('Necesita onboarding: $necesitaOnboarding');
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString("token", token);
@@ -144,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       _showSnack(response['message'] ?? 'Inicio de sesión exitoso');
 
-      // ✅ Registrar FCM token después del login exitoso
+      // �S& Registrar FCM token después del login exitoso
       await FCMService.registerTokenAfterLogin(token);
 
       Navigator.pushAndRemoveUntil(
@@ -156,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
     } catch (e) {
-      print('Error en login: $e');
+      if (kDebugMode) print('Error en login: $e');
       _showSnack("Error al iniciar sesión: $e", isError: true);
     } finally {
       if (mounted) {
@@ -165,7 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // 🔹 Login con Google
+  // �x� Login con Google
   Future<void> loginGoogle() async {
     setState(() => _isGoogleLoading = true);
 
@@ -187,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final response = await ApiService.loginGoogle(auth.idToken!);
 
-      print('Respuesta Google login: $response');
+      if (kDebugMode) print('Respuesta Google login: $response');
 
       if (response['status'] == 409 || response['statusCode'] == 409) {
         await _googleSignIn.disconnect();
@@ -232,7 +233,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       _showSnack(response['message'] ?? 'Bienvenido con Google');
 
-      // ✅ Registrar FCM token después del login con Google exitoso
+      // �S& Registrar FCM token después del login con Google exitoso
       await FCMService.registerTokenAfterLogin(response['token']);
 
       if (rol == 'pendiente' && idNegocio == null) {
@@ -252,7 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
     } catch (e) {
-      print('Error en loginGoogle: $e');
+      if (kDebugMode) print('Error en loginGoogle: $e');
       _showSnack('Error al iniciar sesión con Google.', isError: true);
     } finally {
       if (mounted) {
@@ -344,7 +345,7 @@ Widget build(BuildContext context) {
       child: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-          // ✅ Hacer que el contenido ocupe al menos toda la altura
+          // �S& Hacer que el contenido ocupe al menos toda la altura
           child: ConstrainedBox(
             constraints: BoxConstraints(
               minHeight: MediaQuery.of(context).size.height - 
@@ -479,7 +480,7 @@ SizedBox(
         : Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // ✅ Imagen del logo de Google
+              // �S& Imagen del logo de Google
               Image.asset(
                 'assets/images/google_logo.png',
                 width: 24,
@@ -541,7 +542,7 @@ SizedBox(
                   ],
                 ),
                 
-                // ✅ Espacio adicional para evitar que quede pegado al fondo
+                // �S& Espacio adicional para evitar que quede pegado al fondo
                 const SizedBox(height: 20),
               ],
             ),

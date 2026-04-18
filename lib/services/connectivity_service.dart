@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 class ConnectivityService {
   static final ConnectivityService _instance = ConnectivityService._internal();
@@ -31,7 +32,7 @@ class ConnectivityService {
     if (_isOnline != isOnline) {
       _isOnline = isOnline;
       _connectionStatusController.add(isOnline);
-      print('🌐 Estado de conexión: ${isOnline ? "Online" : "Offline"}');
+      if (kDebugMode) print('�xR� Estado de conexión: ${isOnline ? "Online" : "Offline"}');
     }
   }
 

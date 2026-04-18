@@ -65,7 +65,7 @@ class NotificationService {
           errorStr.contains('Failed to connect'))) {
         
         if (kDebugMode) {
-          print('📱 Modo offline - Cargando notificaciones desde caché');
+          if (kDebugMode) print('�x� Modo offline - Cargando notificaciones desde caché');
         }
         
         final cachedData = await _dbService.getNotificacionesCache(
@@ -144,7 +144,7 @@ class NotificationService {
           errorStr.contains('Timeout')) {
         
         if (kDebugMode) {
-          print('📱 Modo offline - Marcando localmente como leída');
+          if (kDebugMode) print('�x� Modo offline - Marcando localmente como leída');
         }
         
         // Marcar localmente en caché
@@ -184,7 +184,7 @@ class NotificationService {
           errorStr.contains('Timeout')) {
         
         if (kDebugMode) {
-          print('📱 Modo offline - Marcando todas localmente');
+          if (kDebugMode) print('�x� Modo offline - Marcando todas localmente');
         }
         
         final updatedCount = await _dbService.marcarTodasNotificacionesLeidasCache();
@@ -201,11 +201,11 @@ class NotificationService {
     final acciones = await _dbService.getAccionesPendientes();
     
     if (acciones.isEmpty) {
-      if (kDebugMode) print('📱 No hay acciones pendientes para sincronizar');
+      if (kDebugMode) print('�x� No hay acciones pendientes para sincronizar');
       return 0;
     }
     
-    if (kDebugMode) print('📱 Sincronizando ${acciones.length} acciones pendientes...');
+    if (kDebugMode) print('�x� Sincronizando ${acciones.length} acciones pendientes...');
     
     int sincronizadas = 0;
     for (var accion in acciones) {
@@ -225,17 +225,17 @@ class NotificationService {
         await _dbService.marcarAccionSincronizada(accion['id']);
         
         if (kDebugMode) {
-          print('✅ Acción $tipo sincronizada correctamente');
+          if (kDebugMode) print('�S& Acción $tipo sincronizada correctamente');
         }
       } catch (e) {
         if (kDebugMode) {
-          print('❌ Error sincronizando acción ${accion['id']}: $e');
+          if (kDebugMode) print('�R Error sincronizando acción ${accion['id']}: $e');
         }
       }
     }
     
     if (kDebugMode) {
-      print('✅ $sincronizadas acciones pendientes sincronizadas');
+      if (kDebugMode) print('�S& $sincronizadas acciones pendientes sincronizadas');
     }
     return sincronizadas;
   }

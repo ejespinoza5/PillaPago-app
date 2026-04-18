@@ -1,12 +1,35 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const String baseUrl = "http://192.168.0.4:3000";
+  static const String imageBaseUrl = "http://192.168.0.4:3000"; // ✅ URL base para imágenes
+  
   //static const String baseUrl = "https://radical-mold-commands-stranger.trycloudflare.com";
+
+  static void _debugLog(String message) {
+    if (kDebugMode) {
+      debugPrint(message);
+    }
+  }
+
+  // ✅ Método helper para obtener URL completa de la imagen
+  static String getImagenUrl(String? url) {
+    if (url == null || url.isEmpty) return '';
+    
+    // Si ya es una URL completa (http:// o https://), devolverla
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    
+    // Si es una ruta relativa, construir la URL completa
+    return '$imageBaseUrl/$url';
+  }
+
   // ==================== TOKEN MANAGEMENT ====================
   
   // Guardar tokens
@@ -14,7 +37,6 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', accessToken);
     await prefs.setString('refresh_token', refreshToken);
-    print('Tokens guardados');
   }
 
   // Obtener access token
@@ -34,22 +56,21 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('refresh_token');
-    print('Tokens eliminados');
   }
 
   // Refrescar token
   static Future<Map<String, dynamic>> refreshToken(String refreshToken) async {
     try {
-      print('=== refreshToken ===');
+      _debugLog('=== refreshToken ===');
       
       final response = await http.post(
         Uri.parse('$baseUrl/api/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'refreshToken': refreshToken}),
       );
+
+      _debugLog('refreshToken status: ${response.statusCode}');
       
-      print('Status code refresh: ${response.statusCode}');
-      print('Response refresh: ${response.body}');
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -74,7 +95,7 @@ class ApiService {
         };
       }
     } catch (e) {
-      print('Error en refreshToken: $e');
+      _debugLog('refreshToken error: $e');
       return {
         'success': false,
         'message': 'Error de conexión: ${e.toString()}',
@@ -83,7 +104,6 @@ class ApiService {
   }
 
 // Método para hacer peticiones con manejo automático de refresh token
-// Método para hacer peticiones con manejo automático de refresh token
 static Future<Map<String, dynamic>> requestWithAuth(
   String method,
   String endpoint, {
@@ -91,12 +111,12 @@ static Future<Map<String, dynamic>> requestWithAuth(
   Map<String, dynamic>? body,
   bool retry = true,
 }) async {
-  // ✅ Obtener token actualizado cada vez
+  // Obtener token actualizado cada vez
   String? token = await getAccessToken();
+
+  _debugLog('=== requestWithAuth ===');
+  _debugLog('Endpoint: $endpoint');
   
-  print('=== requestWithAuth ===');
-  print('Endpoint: $endpoint');
-  print('Token usado: ${token?.substring(0, 20)}...');
   
   Map<String, String> baseHeaders = {
     'Content-Type': 'application/json',
@@ -128,14 +148,13 @@ static Future<Map<String, dynamic>> requestWithAuth(
   
   // Si el token expiró (401) y tenemos refresh token
   if (response.statusCode == 401 && retry) {
-    print('Token expirado, intentando refrescar...');
+    _debugLog('Token expirado, intentando refrescar...');
     
     final storedRefreshToken = await getRefreshToken();
     if (storedRefreshToken != null) {
       final refreshResponse = await refreshToken(storedRefreshToken);
       if (refreshResponse['success']) {
-        print('Token refrescado exitosamente');
-        // ✅ Obtener el nuevo token
+        _debugLog('Token refrescado exitosamente');
         final newToken = await getAccessToken();
         baseHeaders['Authorization'] = 'Bearer $newToken';
         response = await makeRequest();
@@ -174,7 +193,7 @@ static Future<Map<String, dynamic>> requestWithAuth(
       'message': data['message'],
     };
   } catch (e) {
-    print('Error parsing response: $e');
+    _debugLog('requestWithAuth parse error: $e');
     return {
       'success': false,
       'statusCode': response.statusCode,
@@ -246,7 +265,6 @@ static Future<Map<String, dynamic>> requestWithAuth(
   }
 
   // LOGIN GOOGLE
-  // LOGIN GOOGLE
 static Future loginGoogle(String idToken) async {
   try {
     final response = await http.post(
@@ -257,10 +275,6 @@ static Future loginGoogle(String idToken) async {
     
     final data = jsonDecode(response.body);
     
-    print('Status code Google login: ${response.statusCode}');
-    print('Respuesta Google API: $data');
-    
-    // ✅ Incluir el status code en la respuesta
     if (response.statusCode == 409) {
       return {
         'status': 409,
@@ -294,15 +308,12 @@ static Future loginGoogle(String idToken) async {
       };
     }
   } catch (e) {
-    print('Error en loginGoogle: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
     };
   }
 }
-
-// En api_service.dart
 
 // VERIFICAR CORREO (con token opcional)
 static Future<Map<String, dynamic>> verifyEmail(
@@ -311,18 +322,12 @@ static Future<Map<String, dynamic>> verifyEmail(
   String? token,
 }) async {
   try {
-    print('=== verifyEmail ===');
-    print('Email: $email');
-    print('Code: $code');
-    
     final headers = {
       'Content-Type': 'application/json',
     };
     
-    // ✅ Agregar token si está disponible
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
-      print('Token incluido en la petición');
     }
     
     final response = await http.post(
@@ -330,9 +335,6 @@ static Future<Map<String, dynamic>> verifyEmail(
       headers: headers,
       body: jsonEncode({'email': email, 'code': code}),
     );
-    
-    print('Status code: ${response.statusCode}');
-    print('Response body: ${response.body}');
     
     final data = jsonDecode(response.body);
     
@@ -358,7 +360,6 @@ static Future<Map<String, dynamic>> verifyEmail(
       };
     }
   } catch (e) {
-    print('Error en verifyEmail: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -372,17 +373,12 @@ static Future<Map<String, dynamic>> resendVerificationCode(
   String? token,
 }) async {
   try {
-    print('=== resendVerificationCode ===');
-    print('Email: $email');
-    
     final headers = {
       'Content-Type': 'application/json',
     };
     
-    // ✅ Agregar token si está disponible
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
-      print('Token incluido en la petición');
     }
     
     final response = await http.post(
@@ -390,9 +386,6 @@ static Future<Map<String, dynamic>> resendVerificationCode(
       headers: headers,
       body: jsonEncode({'email': email}),
     );
-    
-    print('Status code: ${response.statusCode}');
-    print('Response body: ${response.body}');
     
     final data = jsonDecode(response.body);
     
@@ -408,7 +401,6 @@ static Future<Map<String, dynamic>> resendVerificationCode(
       };
     }
   } catch (e) {
-    print('Error en resendVerificationCode: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -416,7 +408,6 @@ static Future<Map<String, dynamic>> resendVerificationCode(
   }
 }
 
-  // REENVIAR CODIGO
   // REGISTRAR NEGOCIO (dueño)
   Future<Map<String, dynamic>> registerNegocio(String nombreNegocio, String token) async {
     return await requestWithAuth('POST', '/api/negocios/register-owner', body: {
@@ -504,9 +495,6 @@ static Future<Map<String, dynamic>> resendVerificationCode(
 Future<Map<String, dynamic>> getTransferencias(String token, {int page = 1, int limit = 10}) async {
   final response = await requestWithAuth('GET', '/api/transferencias?page=$page&limit=$limit');
   
-  print('=== getTransferencias ===');
-  print('URL: /api/transferencias?page=$page&limit=$limit');
-  
   if (response['success'] && response['data'] != null) {
     final data = response['data'];
     
@@ -532,11 +520,7 @@ Future<Map<String, dynamic>> getTransferencias(String token, {int page = 1, int 
 
 Future<Map<String, dynamic>> getBancos(String token) async {
   try {
-    // Obtener el token actualizado
     String? accessToken = await getAccessToken();
-    
-    print('=== getBancos ===');
-    print('Token usado: ${accessToken?.substring(0, 20)}...');
     
     final response = await http.get(
       Uri.parse('$baseUrl/api/bancos'),
@@ -545,9 +529,6 @@ Future<Map<String, dynamic>> getBancos(String token) async {
         'Authorization': 'Bearer $accessToken',
       },
     );
-    
-    print('Status code: ${response.statusCode}');
-    print('Response body: ${response.body}');
     
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -572,12 +553,10 @@ Future<Map<String, dynamic>> getBancos(String token) async {
         'data': data is List ? data : [],
       };
     } else if (response.statusCode == 401) {
-      // Token expirado, intentar refrescar
       final storedRefreshToken = await getRefreshToken();
       if (storedRefreshToken != null) {
         final refreshResponse = await refreshToken(storedRefreshToken);
         if (refreshResponse['success']) {
-          // Reintentar con el nuevo token
           return await getBancos(token);
         }
       }
@@ -593,7 +572,6 @@ Future<Map<String, dynamic>> getBancos(String token) async {
       };
     }
   } catch (e) {
-    print('Error en getBancos: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -610,10 +588,7 @@ Future<Map<String, dynamic>> getBancos(String token) async {
   File imagenFile,
 ) async {
   try {
-    print('=== crearTransferencia MULTIPART ===');
-    
     String? accessToken = await ApiService.getAccessToken();
-    print('AccessToken: ${accessToken?.substring(0, 20)}...');
     
     var request = http.MultipartRequest(
       'POST',
@@ -637,14 +612,8 @@ Future<Map<String, dynamic>> getBancos(String token) async {
       ),
     );
     
-    print('Campos enviados: ${request.fields}');
-    print('Archivo: ${imagenFile.path}');
-    
     final response = await request.send();
     final responseBody = await response.stream.bytesToString();
-    
-    print('Status code: ${response.statusCode}');
-    print('Response body: $responseBody');
     
     if (responseBody.isEmpty) {
       return {
@@ -682,7 +651,6 @@ Future<Map<String, dynamic>> getBancos(String token) async {
       };
     }
   } catch (e) {
-    print('Error en crearTransferencia: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -698,11 +666,10 @@ Future<Map<String, dynamic>> getEmpleados(String token, {int page = 1, int limit
   if (response['success'] && response['data'] != null) {
     final data = response['data'];
     
-    // ✅ La respuesta tiene { estado: "activo", data: [], pagination: {} }
     if (data is Map && data.containsKey('data')) {
       return {
         'success': true,
-        'data': data['data'], // Lista de empleados
+        'data': data['data'],
         'pagination': data['pagination'],
         'totalPages': data['pagination']?['totalPages'] ?? 1,
       };
@@ -724,11 +691,10 @@ Future<Map<String, dynamic>> getEmpleadosInactivos(String token, {int page = 1, 
   if (response['success'] && response['data'] != null) {
     final data = response['data'];
     
-    // ✅ La respuesta tiene { estado: "inactivo", data: [], pagination: {} }
     if (data is Map && data.containsKey('data')) {
       return {
         'success': true,
-        'data': data['data'], // Lista de empleados
+        'data': data['data'],
         'pagination': data['pagination'],
         'totalPages': data['pagination']?['totalPages'] ?? 1,
       };
@@ -750,7 +716,6 @@ Future<Map<String, dynamic>> getEmpleadoDetalle(String token, int idUsuario) asy
   if (response['success'] && response['data'] != null) {
     final data = response['data'];
     
-    // La respuesta tiene { estado: "activo", empleado: {...} }
     if (data.containsKey('empleado')) {
       return {
         'success': true,
@@ -788,12 +753,6 @@ Future<Map<String, dynamic>> editarTransferencia(
   File? imagenFile,
 }) async {
   try {
-    print('=== editarTransferencia ===');
-    print('ID Transferencia: $idTransferencia');
-    print('Token length: ${token.length}');
-    print('Token preview: ${token.substring(0, token.length > 20 ? 20 : token.length)}');
-    
-    // Verificar token
     if (token.isEmpty) {
       return {
         'success': false,
@@ -802,7 +761,6 @@ Future<Map<String, dynamic>> editarTransferencia(
     }
     
     if (imagenFile != null) {
-      // Con imagen - usar multipart
       var request = http.MultipartRequest(
         'PATCH',
         Uri.parse('$baseUrl/api/transferencias/$idTransferencia'),
@@ -827,7 +785,6 @@ Future<Map<String, dynamic>> editarTransferencia(
       
       final response = await request.send();
       final responseBody = await response.stream.bytesToString();
-      print('Response body: $responseBody');
       final data = jsonDecode(responseBody);
       
       return {
@@ -835,14 +792,11 @@ Future<Map<String, dynamic>> editarTransferencia(
         'message': data['message'] ?? (response.statusCode == 200 ? 'Transferencia actualizada' : 'Error al actualizar'),
       };
     } else {
-      // Sin imagen - usar JSON
       Map<String, dynamic> body = {};
       if (idBanco != null) body['id_banco'] = idBanco;
       if (fechaTransferencia != null) body['fecha_transferencia'] = fechaTransferencia;
       if (monto != null) body['monto'] = monto;
       if (observaciones != null) body['observaciones'] = observaciones;
-      
-      print('Body: $body');
       
       final response = await http.patch(
         Uri.parse('$baseUrl/api/transferencias/$idTransferencia'),
@@ -853,8 +807,6 @@ Future<Map<String, dynamic>> editarTransferencia(
         body: jsonEncode(body),
       );
       
-      print('Status code: ${response.statusCode}');
-      print('Response body: ${response.body}');
       final data = jsonDecode(response.body);
       
       return {
@@ -863,7 +815,6 @@ Future<Map<String, dynamic>> editarTransferencia(
       };
     }
   } catch (e) {
-    print('Error en editarTransferencia: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -873,10 +824,6 @@ Future<Map<String, dynamic>> editarTransferencia(
 // Eliminar transferencia
 Future<Map<String, dynamic>> eliminarTransferencia(String token, String idTransferencia) async {
   try {
-    print('=== eliminarTransferencia ===');
-    print('ID Transferencia: $idTransferencia');
-    print('Token length: ${token.length}');
-    
     final response = await http.delete(
       Uri.parse('$baseUrl/api/transferencias/$idTransferencia'),
       headers: {
@@ -884,9 +831,6 @@ Future<Map<String, dynamic>> eliminarTransferencia(String token, String idTransf
         'Authorization': 'Bearer $token',
       },
     );
-    
-    print('Status code: ${response.statusCode}');
-    print('Response body: ${response.body}');
     
     final data = jsonDecode(response.body);
     
@@ -902,7 +846,6 @@ Future<Map<String, dynamic>> eliminarTransferencia(String token, String idTransf
       };
     }
   } catch (e) {
-    print('Error en eliminarTransferencia: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -910,15 +853,9 @@ Future<Map<String, dynamic>> eliminarTransferencia(String token, String idTransf
   }
 }
 
-// En api_service.dart, agrega este método:
-
 // Obtener transferencia por ID
 Future<Map<String, dynamic>> getTransferenciaById(String token, String idTransferencia) async {
   try {
-    print('=== getTransferenciaById ===');
-    print('ID Transferencia: $idTransferencia');
-    print('Token length: ${token.length}');
-    
     final response = await http.get(
       Uri.parse('$baseUrl/api/transferencias/$idTransferencia'),
       headers: {
@@ -926,9 +863,6 @@ Future<Map<String, dynamic>> getTransferenciaById(String token, String idTransfe
         'Authorization': 'Bearer $token',
       },
     );
-    
-    print('Status code: ${response.statusCode}');
-    print('Response body: ${response.body}');
     
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -944,7 +878,6 @@ Future<Map<String, dynamic>> getTransferenciaById(String token, String idTransfe
       };
     }
   } catch (e) {
-    print('Error en getTransferenciaById: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -958,12 +891,6 @@ Future<Map<String, dynamic>> editarPerfil(
   File? fotoPerfil,
 }) async {
   try {
-    print('=== editarPerfil ===');
-    print('Token length: ${token.length}');
-    print('Token preview: ${token.substring(0, token.length > 20 ? 20 : token.length)}');
-    print('Nombre: $nombre');
-    print('Foto: ${fotoPerfil?.path}');
-    
     if (token.isEmpty) {
       return {
         'success': false,
@@ -972,7 +899,6 @@ Future<Map<String, dynamic>> editarPerfil(
     }
     
     if (fotoPerfil != null) {
-      // Con foto - usar multipart
       var request = http.MultipartRequest(
         'PATCH',
         Uri.parse('$baseUrl/api/usuarios/me/perfil'),
@@ -996,8 +922,6 @@ Future<Map<String, dynamic>> editarPerfil(
       
       final response = await request.send();
       final responseBody = await response.stream.bytesToString();
-      print('Status code: ${response.statusCode}');
-      print('Response: $responseBody');
       
       if (response.statusCode == 200) {
         final data = jsonDecode(responseBody);
@@ -1007,7 +931,6 @@ Future<Map<String, dynamic>> editarPerfil(
           'data': data,
         };
       } else if (response.statusCode == 401) {
-        // Token expirado, intentar refrescar
         final storedRefreshToken = await getRefreshToken();
         if (storedRefreshToken != null) {
           final refreshResponse = await refreshToken(storedRefreshToken);
@@ -1028,7 +951,6 @@ Future<Map<String, dynamic>> editarPerfil(
         };
       }
     } else {
-      // Solo nombre - usar JSON
       Map<String, dynamic> body = {};
       if (nombre != null && nombre.isNotEmpty) {
         body['nombre'] = nombre;
@@ -1042,9 +964,6 @@ Future<Map<String, dynamic>> editarPerfil(
         },
         body: jsonEncode(body),
       );
-      
-      print('Status code: ${response.statusCode}');
-      print('Response: ${response.body}');
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1075,7 +994,6 @@ Future<Map<String, dynamic>> editarPerfil(
       }
     }
   } catch (e) {
-    print('Error en editarPerfil: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -1085,9 +1003,6 @@ Future<Map<String, dynamic>> editarPerfil(
 // Salir del negocio (empleados y dueños)
 Future<Map<String, dynamic>> salirDelNegocio(String token) async {
   try {
-    print('=== salirDelNegocio ===');
-    print('Token length: ${token.length}');
-    
     if (token.isEmpty) {
       return {
         'success': false,
@@ -1103,9 +1018,6 @@ Future<Map<String, dynamic>> salirDelNegocio(String token) async {
       },
     );
     
-    print('Status code: ${response.statusCode}');
-    print('Response: ${response.body}');
-    
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return {
@@ -1113,7 +1025,6 @@ Future<Map<String, dynamic>> salirDelNegocio(String token) async {
         'message': data['message'] ?? 'Has salido del negocio exitosamente',
       };
     } else if (response.statusCode == 401) {
-      // Token expirado, intentar refrescar
       final storedRefreshToken = await getRefreshToken();
       if (storedRefreshToken != null) {
         final refreshResponse = await refreshToken(storedRefreshToken);
@@ -1134,7 +1045,6 @@ Future<Map<String, dynamic>> salirDelNegocio(String token) async {
       };
     }
   } catch (e) {
-    print('Error en salirDelNegocio: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -1148,8 +1058,6 @@ Future<Map<String, dynamic>> cambiarPassword(
   required String passwordNueva,
 }) async {
   try {
-    print('=== cambiarPassword ===');
-    
     final response = await http.patch(
       Uri.parse('$baseUrl/api/auth/password'),
       headers: {
@@ -1162,9 +1070,6 @@ Future<Map<String, dynamic>> cambiarPassword(
       }),
     );
     
-    print('Status code: ${response.statusCode}');
-    print('Response: ${response.body}');
-    
     final data = jsonDecode(response.body);
     
     if (response.statusCode == 200) {
@@ -1173,7 +1078,6 @@ Future<Map<String, dynamic>> cambiarPassword(
         'message': data['message'] ?? 'Contraseña actualizada correctamente',
       };
     } else if (response.statusCode == 401) {
-      // Token expirado, intentar refrescar
       final storedRefreshToken = await getRefreshToken();
       if (storedRefreshToken != null) {
         final refreshResponse = await refreshToken(storedRefreshToken);
@@ -1197,7 +1101,6 @@ Future<Map<String, dynamic>> cambiarPassword(
       };
     }
   } catch (e) {
-    print('Error en cambiarPassword: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -1210,9 +1113,6 @@ Future<Map<String, dynamic>> solicitarCambioEmail(
   required String newEmail,
 }) async {
   try {
-    print('=== solicitarCambioEmail ===');
-    print('New email: $newEmail');
-    
     final response = await http.post(
       Uri.parse('$baseUrl/api/auth/email/change/request'),
       headers: {
@@ -1222,11 +1122,6 @@ Future<Map<String, dynamic>> solicitarCambioEmail(
       body: jsonEncode({'new_email': newEmail}),
     );
     
-    print('Status code: ${response.statusCode}');
-    print('Response body: ${response.body}');
-    print('Response body length: ${response.body.length}');
-    
-    // Verificar si la respuesta está vacía
     if (response.body.isEmpty) {
       return {
         'success': false,
@@ -1234,13 +1129,10 @@ Future<Map<String, dynamic>> solicitarCambioEmail(
       };
     }
     
-    // Intentar decodificar JSON
     dynamic data;
     try {
       data = jsonDecode(response.body);
     } catch (e) {
-      print('Error decodificando JSON: $e');
-      print('Respuesta cruda: ${response.body}');
       return {
         'success': false,
         'message': 'Error del servidor. Por favor intenta más tarde.',
@@ -1275,7 +1167,6 @@ Future<Map<String, dynamic>> solicitarCambioEmail(
       };
     }
   } catch (e) {
-    print('Error en solicitarCambioEmail: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -1290,10 +1181,6 @@ Future<Map<String, dynamic>> confirmarCambioEmail(
   required String code,
 }) async {
   try {
-    print('=== confirmarCambioEmail ===');
-    print('New email: $newEmail');
-    print('Code: $code');
-    
     final response = await http.post(
       Uri.parse('$baseUrl/api/auth/email/change/confirm'),
       headers: {
@@ -1305,9 +1192,6 @@ Future<Map<String, dynamic>> confirmarCambioEmail(
         'code': code,
       }),
     );
-    
-    print('Status code: ${response.statusCode}');
-    print('Response: ${response.body}');
     
     final data = jsonDecode(response.body);
     
@@ -1340,7 +1224,6 @@ Future<Map<String, dynamic>> confirmarCambioEmail(
       };
     }
   } catch (e) {
-    print('Error en confirmarCambioEmail: $e');
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',
@@ -1359,10 +1242,6 @@ Future<Map<String, dynamic>> getEstadisticasUltimos7Dias(String token) async {
       },
     );
     
-    print('=== getEstadisticasUltimos7Dias ===');
-    print('Status code: ${response.statusCode}');
-    print('Response: ${response.body}');
-    
     if (response.statusCode == 200) {
       return {
         'success': true,
@@ -1375,7 +1254,81 @@ Future<Map<String, dynamic>> getEstadisticasUltimos7Dias(String token) async {
       };
     }
   } catch (e) {
-    print('Error en getEstadisticasUltimos7Dias: $e');
+    return {
+      'success': false,
+      'message': 'Error de conexión: ${e.toString()}',
+    };
+  }
+}
+
+Future<Map<String, dynamic>> getTransferenciasFiltradas(
+  String token, {
+  Map<String, dynamic>? params,
+}) async {
+  final queryString = params?.entries
+      .map((e) => '${e.key}=${e.value}')
+      .join('&') ?? '';
+  final endpoint = '/api/transferencias${queryString.isNotEmpty ? '?$queryString' : ''}';
+  
+  return await requestWithAuth('GET', endpoint);
+}
+
+// Método para obtener total por usuario (empleado)
+Future<Map<String, dynamic>> getTotalPorUsuario(String token, int idUsuario) async {
+  return await requestWithAuth('GET', '/api/transferencias/totales/usuario?id_usuario=$idUsuario');
+}
+
+// Total por día y usuario específico
+Future<Map<String, dynamic>> getTotalPorDiaYUsuario(String token, String fecha, int idUsuario) async {
+  return await requestWithAuth('GET', '/api/transferencias/totales/dia?fecha=$fecha&id_usuario=$idUsuario');
+}
+
+// Descargar reporte PDF
+Future<Map<String, dynamic>> descargarReportePDF({
+  required String token,
+  int? dia,
+  int? mes,
+  int? anio,
+}) async {
+  try {
+    final queryParams = <String, String>{};
+    
+    if (dia != null) queryParams['dia'] = dia.toString();
+    if (mes != null) queryParams['mes'] = mes.toString();
+    if (anio != null) queryParams['anio'] = anio.toString();
+    
+    final queryString = queryParams.entries.map((e) => '${e.key}=${e.value}').join('&');
+    final url = '$baseUrl/api/transferencias/reporte/pdf${queryString.isNotEmpty ? '?$queryString' : ''}';
+    
+    final response = await http.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/pdf',
+      },
+    );
+    
+    if (response.statusCode == 200) {
+      return {
+        'success': true,
+        'data': response.bodyBytes,
+        'contentType': response.headers['content-type'],
+      };
+    } else {
+      try {
+        final error = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': error['message'] ?? 'Error al generar reporte',
+        };
+      } catch (e) {
+        return {
+          'success': false,
+          'message': 'Error ${response.statusCode}: No se pudo generar el reporte',
+        };
+      }
+    }
+  } catch (e) {
     return {
       'success': false,
       'message': 'Error de conexión: ${e.toString()}',

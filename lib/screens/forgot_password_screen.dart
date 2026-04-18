@@ -1,6 +1,7 @@
 // lib/screens/forgot_password_screen.dart
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   @override
@@ -41,14 +42,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   
   void _onCodeChanged(String value, int index) {
     if (value.length == 1 && index < 5) {
-      // Auto-focus al siguiente campo
       FocusScope.of(context).requestFocus(_codeFocusNodes[index + 1]);
     } else if (value.isEmpty && index > 0) {
-      // Auto-focus al campo anterior si se borra
       FocusScope.of(context).requestFocus(_codeFocusNodes[index - 1]);
     }
     
-    // Actualizar el código completo
     _verificationCode = _codeControllers.map((c) => c.text).join();
   }
 
@@ -94,7 +92,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       return;
     }
     
-    // Validar que el código tenga 6 dígitos
     if (_verificationCode.length != 6) {
       setState(() => _errorMessage = 'Ingresa el código de 6 dígitos completo');
       return;
@@ -121,8 +118,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           _isLoading = false;
         });
         
-        // Redirigir al login después de 2 segundos
-        Future.delayed(Duration(seconds: 2), () {
+        Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
             Navigator.pushReplacementNamed(context, '/login');
           }
@@ -144,88 +140,119 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.bgDark,
       appBar: AppBar(
-        title: Text('Recuperar Contraseña'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        title: const Text('Recuperar Contraseña', style: TextStyle(color: AppTheme.textPrimary)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(24.0),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(
-                Icons.lock_reset,
-                size: 80,
-                color: Colors.blue,
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.green.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.lock_reset,
+                  size: 60,
+                  color: AppTheme.green,
+                ),
               ),
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               Text(
                 _codeSent ? 'Restablecer Contraseña' : 'Recuperar Contraseña',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
                 ),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 10),
+              const SizedBox(height: 10),
               Text(
                 _codeSent 
                     ? 'Ingresa el código de verificación y tu nueva contraseña'
                     : 'Ingresa tu correo electrónico para recibir un código de verificación',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.grey[600],
+                  color: AppTheme.textSecondary,
                 ),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 30),
+              const SizedBox(height: 30),
               
               // Mensajes de error/success
               if (_errorMessage.isNotEmpty)
                 Container(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red[200]!),
+                    color: AppTheme.errorBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.error),
                   ),
                   child: Text(
                     _errorMessage,
-                    style: TextStyle(color: Colors.red[700]),
+                    style: TextStyle(color: AppTheme.error),
                     textAlign: TextAlign.center,
                   ),
                 ),
               
               if (_successMessage.isNotEmpty)
                 Container(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.green[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green[200]!),
+                    color: AppTheme.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.green),
                   ),
                   child: Text(
                     _successMessage,
-                    style: TextStyle(color: Colors.green[700]),
+                    style: TextStyle(color: AppTheme.green),
                     textAlign: TextAlign.center,
                   ),
                 ),
               
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               
-              // Campo de email (siempre visible)
+              // Campo de email
               TextFormField(
                 controller: _emailController,
                 enabled: !_codeSent,
+                style: const TextStyle(color: AppTheme.textPrimary),
                 decoration: InputDecoration(
                   labelText: 'Correo electrónico',
-                  prefixIcon: Icon(Icons.email),
+                  labelStyle: const TextStyle(color: AppTheme.textSecondary),
+                  prefixIcon: Icon(Icons.email, color: AppTheme.green),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.border),
                   ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.green, width: 2),
+                  ),
+                  errorBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: AppTheme.error),
+                  ),
+                  filled: true,
+                  fillColor: AppTheme.surface,
                 ),
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
@@ -239,34 +266,52 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 },
               ),
               
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               
               // Campos del código de verificación (6 cuadros)
               if (_codeSent) ...[
                 Text(
                   'Código de verificación',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: List.generate(6, (index) => _buildCodeTextField(index)),
                 ),
-                SizedBox(height: 24),
+                const SizedBox(height: 24),
                 
                 // Campos de nueva contraseña
                 TextFormField(
                   controller: _newPasswordController,
                   obscureText: true,
+                  style: const TextStyle(color: AppTheme.textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Nueva contraseña',
-                    prefixIcon: Icon(Icons.lock),
+                    labelStyle: const TextStyle(color: AppTheme.textSecondary),
+                    prefixIcon: Icon(Icons.lock, color: AppTheme.green),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.border),
                     ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.green, width: 2),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.error),
+                    ),
+                    filled: true,
+                    fillColor: AppTheme.surface,
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -278,16 +323,33 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     return null;
                   },
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: _confirmPasswordController,
                   obscureText: true,
+                  style: const TextStyle(color: AppTheme.textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Confirmar nueva contraseña',
-                    prefixIcon: Icon(Icons.lock_outline),
+                    labelStyle: const TextStyle(color: AppTheme.textSecondary),
+                    prefixIcon: Icon(Icons.lock_outline, color: AppTheme.green),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.border),
                     ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.green, width: 2),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: AppTheme.error),
+                    ),
+                    filled: true,
+                    fillColor: AppTheme.surface,
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -301,35 +363,45 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
               ],
               
-              SizedBox(height: 30),
+              const SizedBox(height: 30),
               
               // Botón principal
-              ElevatedButton(
-                onPressed: _isLoading ? null : (_codeSent ? _resetPassword : _sendRecoveryCode),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : (_codeSent ? _resetPassword : _sendRecoveryCode),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : Text(
+                          _codeSent ? 'Cambiar Contraseña' : 'Enviar Código',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
                 ),
-                child: _isLoading
-                    ? CircularProgressIndicator(color: Colors.white)
-                    : Text(
-                        _codeSent ? 'Cambiar Contraseña' : 'Enviar Código',
-                        style: TextStyle(fontSize: 16),
-                      ),
               ),
               
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               
               // Botón para volver al login
               TextButton(
                 onPressed: () {
                   Navigator.pushReplacementNamed(context, '/login');
                 },
-                child: Text('Volver al inicio de sesión'),
+                child: Text(
+                  'Volver al inicio de sesión',
+                  style: TextStyle(color: AppTheme.textSecondary),
+                ),
               ),
               
               // Botón para reenviar código
@@ -338,7 +410,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   onPressed: _isLoading ? null : _sendRecoveryCode,
                   child: Text(
                     '¿No recibiste el código? Reenviar',
-                    style: TextStyle(color: Colors.blue),
+                    style: TextStyle(color: AppTheme.green),
                   ),
                 ),
             ],
@@ -352,6 +424,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     return Container(
       width: 50,
       height: 60,
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: TextFormField(
         controller: _codeControllers[index],
         focusNode: _codeFocusNodes[index],
@@ -359,13 +435,24 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         keyboardType: TextInputType.number,
         textAlign: TextAlign.center,
         maxLength: 1,
-        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           counterText: '',
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppTheme.border),
           ),
-          contentPadding: EdgeInsets.all(12),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppTheme.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppTheme.green, width: 2),
+          ),
+          contentPadding: const EdgeInsets.all(12),
+          fillColor: AppTheme.surface,
+          filled: true,
         ),
       ),
     );

@@ -3,6 +3,7 @@ import '../services/database_service.dart';
 import '../services/api_service.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 class SyncManager {
   static final SyncManager _instance = SyncManager._internal();
@@ -32,7 +33,7 @@ Future<Map<String, dynamic>> syncPendingTransfers(String token) async {
       return {'success': true, 'message': 'No hay transferencias pendientes', 'sincronizadas': 0};
     }
 
-    print('🔄 Sincronizando ${pendientes.length} transferencias pendientes...');
+    if (kDebugMode) print('�x Sincronizando ${pendientes.length} transferencias pendientes...');
 
     for (var pendiente in pendientes) {
       try {
@@ -62,18 +63,18 @@ Future<Map<String, dynamic>> syncPendingTransfers(String token) async {
         if (response['success']) {
           await _db.eliminarTransferenciaPendiente(pendiente['id']);
           sincronizadas++;
-          print('✅ Transferencia ${pendiente['id']} sincronizada');
+          if (kDebugMode) print('�S& Transferencia ${pendiente['id']} sincronizada');
         } else {
           int nuevosIntentos = (pendiente['intentos'] ?? 0) + 1;
           await _db.actualizarIntentosTransferencia(pendiente['id'], nuevosIntentos);
           errores++;
           
           if (nuevosIntentos >= 5) {
-            print('❌ Transferencia ${pendiente['id']} alcanzó máximo de intentos');
+            if (kDebugMode) print('�R Transferencia ${pendiente['id']} alcanzó máximo de intentos');
           }
         }
       } catch (e) {
-        print('❌ Error sincronizando transferencia ${pendiente['id']}: $e');
+        if (kDebugMode) print('�R Error sincronizando transferencia ${pendiente['id']}: $e');
         errores++;
       }
     }
